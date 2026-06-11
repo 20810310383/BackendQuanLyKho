@@ -59,7 +59,8 @@ const login = async (req, res, next) => {
         _id: user._id,
         tenDangNhap: user.tenDangNhap,
         hoTen: user.hoTen,
-        vaiTro: user.vaiTro
+        vaiTro: user.vaiTro,
+        anhDaiDien: user.anhDaiDien
       });
     } else {
       res.status(401);
@@ -142,8 +143,79 @@ const getMe = async (req, res) => {
     _id: req.user._id,
     tenDangNhap: req.user.tenDangNhap,
     hoTen: req.user.hoTen,
-    vaiTro: req.user.vaiTro
+    vaiTro: req.user.vaiTro,
+    anhDaiDien: req.user.anhDaiDien
   });
 };
 
-module.exports = { login, logout, refresh, getMe };
+// @desc    Cập nhật thông tin cá nhân
+// @route   PUT /api/auth/profile
+// @access  Private
+const updateProfile = async (req, res, next) => {
+  const { hoTen, anhDaiDien } = req.body;
+
+  try {
+    const user = await NguoiDung.findById(req.user._id);
+
+    if (!user) {
+      res.status(404);
+      return next(new Error('Không tìm thấy người dùng'));
+    }
+
+    if (hoTen !== undefined) user.hoTen = hoTen;
+    if (anhDaiDien !== undefined) user.anhDaiDien = anhDaiDien;
+
+    const updatedUser = await user.save();
+
+    res.json({
+      _id: updatedUser._id,
+      tenDangNhap: updatedUser.tenDangNhap,
+      hoTen: updatedUser.hoTen,
+      vaiTro: updatedUser.vaiTro,
+      anhDaiDien: updatedUser.anhDaiDien
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Thay đổi mật khẩu
+// @route   PUT /api/auth/change-password
+// @access  Private
+const changePassword = async (req, res, next) => {
+  const { matKhauCu, matKhauMoi } = req.body;
+
+  if (!matKhauCu || !matKhauMoi) {
+    res.status(400);
+    return next(new Error('Vui lòng cung cấp mật khẩu cũ và mật khẩu mới'));
+  }
+
+  try {
+    const user = await NguoiDung.findById(req.user._id);
+
+    if (!user) {
+      res.status(404);
+      return next(new Error('Không tìm thấy người dùng'));
+    }
+
+    // So sánh mật khẩu cũ
+    const isMatch = await user.soSanhMatKhau(matKhauCu);
+    if (!isMatch) {
+      res.status(400);
+      return next(new Error('Mật khẩu cũ không chính xác'));
+    }
+
+    // Cập nhật mật khẩu mới (Mongoose pre-save hook sẽ tự động băm)
+    user.matKhau = matKhauMoi;
+    await user.save();
+
+    res.json({
+      success: true,
+      message: 'Thay đổi mật khẩu thành công'
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports = { login, logout, refresh, getMe, updateProfile, changePassword };

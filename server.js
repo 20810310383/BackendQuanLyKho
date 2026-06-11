@@ -25,12 +25,29 @@ const io = new Server(server, {
   }
 });
 
+// Map để theo dõi socket nào gắn với userId nào (socket.id -> userId)
+const onlineUsers = new Map();
+
 // Lắng nghe kết nối Real-time qua Socket.io
 io.on('connection', (socket) => {
   console.log(`Đã kết nối Socket: ${socket.id}`);
   
+  socket.on('user:online', (userId) => {
+    onlineUsers.set(socket.id, userId);
+    console.log(`User ${userId} đang online (Socket: ${socket.id})`);
+    // Gửi danh sách các userId đang online cho tất cả client
+    io.emit('users:online', Array.from(new Set(onlineUsers.values())));
+  });
+
+  socket.on('users:get_online', () => {
+    socket.emit('users:online', Array.from(new Set(onlineUsers.values())));
+  });
+
   socket.on('disconnect', () => {
     console.log(`Đã ngắt kết nối Socket: ${socket.id}`);
+    onlineUsers.delete(socket.id);
+    // Gửi danh sách cập nhật
+    io.emit('users:online', Array.from(new Set(onlineUsers.values())));
   });
 });
 
@@ -41,7 +58,9 @@ app.use((req, res, next) => {
 });
 
 // Security middleware
-app.use(helmet());
+app.use(helmet({
+  crossOriginResourcePolicy: false,
+}));
 
 // CORS configuration - chỉ cho phép domain nội bộ truy cập
 app.use(cors({
@@ -69,6 +88,7 @@ app.use('/api/orders', require('./src/routes/orderRoutes'));
 app.use('/api/imports', require('./src/routes/importRoutes'));
 app.use('/api/cashflows', require('./src/routes/cashFlowRoutes'));
 app.use('/api/reports', require('./src/routes/reportRoutes'));
+app.use('/api/users', require('./src/routes/userRoutes'));
 
 
 // Register Upload Routes

@@ -9,7 +9,7 @@ dotenv.config();
 const seedUsers = async () => {
   try {
     // Kết nối database
-    await mongoose.connect(process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/quanlykho');
+    await mongoose.connect(process.env.MONGO_URI);
     console.log('Đang kết nối cơ sở dữ liệu để khởi tạo tài khoản...');
 
     // Xóa toàn bộ user hiện có để tránh dư thừa tài khoản

@@ -22,6 +22,10 @@ const nguoiDungSchema = new mongoose.Schema({
     enum: ['admin'],
     default: 'admin'
   },
+  anhDaiDien: {
+    type: String,
+    default: ''
+  },
   tokenLamMoi: {
     type: String,
     default: null
