@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 const dotenv = require('dotenv');
 const NguoiDung = require('../models/NguoiDung');
-const connectDB = require('./db');
+const connectDB = require('./connectDB');
 
 // Tải biến môi trường
 dotenv.config();

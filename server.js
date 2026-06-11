@@ -64,6 +64,11 @@ app.use('/uploads', express.static(path.join(__dirname, 'public/uploads')));
 
 // Register API Routes
 app.use('/api/auth', require('./src/routes/authRoutes'));
+app.use('/api/products', require('./src/routes/productRoutes'));
+app.use('/api/orders', require('./src/routes/orderRoutes'));
+app.use('/api/imports', require('./src/routes/importRoutes'));
+app.use('/api/cashflows', require('./src/routes/cashFlowRoutes'));
+app.use('/api/reports', require('./src/routes/reportRoutes'));
 
 
 // Register Upload Routes
