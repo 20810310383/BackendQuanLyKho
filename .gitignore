@@ -20,7 +20,3 @@ node_modules/
 *.njsproj
 *.sln
 *.sw?
-
-# Uploads directory
-src/uploads/
-uploads/
