@@ -73,6 +73,11 @@ const danhSachDonHang = async (req, res) => {
 
     const orders = await DonHang.find(query)
       .populate('nguoiBan', 'hoTen tenDangNhap vaiTro')
+      .populate({
+        path: 'danhSachSanPham.sanPhamId',
+        select: 'anhSanPham',
+        model: 'SanPham'
+      })
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
@@ -103,7 +108,10 @@ const chiTietDonHang = async (req, res) => {
   try {
     const order = await DonHang.findById(req.params.id)
       .populate('nguoiBan', 'hoTen tenDangNhap vaiTro')
-      .populate('danhSachSanPham.sanPhamId')
+      .populate({
+        path: 'danhSachSanPham.sanPhamId',
+        model: 'SanPham'
+      })
       .lean();
 
     if (!order) {
@@ -129,6 +137,8 @@ const taoDonHang = async (req, res) => {
     const {
       tenKhachHang,
       soDienThoaiKhach,
+      emailKhach,
+      diaChiKhach,
       loaiDonHang,
       danhSachSanPham,
       tienGiamGia,
@@ -143,10 +153,6 @@ const taoDonHang = async (req, res) => {
       throw new Error('Đơn hàng phải có ít nhất một sản phẩm');
     }
 
-    // Xác định trạng thái ban đầu của đơn hàng
-    // Đơn trực tiếp (POS) mặc định là 'hoan_thanh', đơn đặt trước có thể là 'cho_xuly'
-    const status = trangThai || (loaiDonHang === 'dat_hang' ? 'cho_xuly' : 'hoan_thanh');
-
     // 1. Kiểm tra tồn kho động và tính tổng tiền
     let tongTien = 0;
     const verifiedProducts = [];
@@ -158,19 +164,7 @@ const taoDonHang = async (req, res) => {
         throw new Error(`Không tìm thấy sản phẩm ID: ${item.sanPhamId}`);
       }
 
-      // Chỉ kiểm tra tồn kho nếu đơn hàng chuyển thẳng sang trạng thái có xuất kho (hoan_thanh hoặc dang_giao)
-      if (status === 'hoan_thanh' || status === 'dang_giao') {
-        const stockResult = await LichSuKho.aggregate([
-          { $match: { sanPhamId: sp._id } },
-          { $group: { _id: "$sanPhamId", tonKho: { $sum: "$soLuongThayDoi" } } }
-        ]);
 
-        const currentStock = stockResult.length > 0 ? stockResult[0].tonKho : 0;
-        if (currentStock < item.soLuong) {
-          res.status(400);
-          throw new Error(`Sản phẩm "${sp.tenSanPham}" không đủ hàng tồn kho. (Tồn hiện tại: ${currentStock}, yêu cầu: ${item.soLuong})`);
-        }
-      }
 
       const itemTotal = sp.giaBan * item.soLuong;
       tongTien += itemTotal;
@@ -180,12 +174,21 @@ const taoDonHang = async (req, res) => {
         maSKU: sp.maSKU,
         tenSanPham: sp.tenSanPham,
         soLuong: item.soLuong,
-        donGia: sp.giaBan // Lưu giá bán tại thời điểm này
+        donGia: sp.giaBan, // Lưu giá bán tại thời điểm này
+        anhSanPham: sp.anhSanPham || ''
       });
     }
 
     const actualTienGiamGia = Number(tienGiamGia) || 0;
     const finalAmount = tongTien - actualTienGiamGia;
+    const tienConNo = Math.max(0, finalAmount - (Number(tienDaThanhToan) || 0) - (Number(tienDatCoc) || 0));
+
+    // Xác định trạng thái ban đầu của đơn hàng
+    // Đơn trực tiếp (POS) mặc định là 'hoan_thanh', đơn đặt trước có thể là 'cho_xuly'
+    let status = trangThai || (loaiDonHang === 'dat_hang' ? 'cho_xuly' : 'hoan_thanh');
+    if (status === 'hoan_thanh' && tienConNo > 0) {
+      status = 'con_no';
+    }
 
     // Sinh mã đơn hàng tự động
     const maDonHang = await generateMaDonHang();
@@ -195,19 +198,22 @@ const taoDonHang = async (req, res) => {
       maDonHang,
       tenKhachHang: tenKhachHang || 'Khách vãng lai',
       soDienThoaiKhach: soDienThoaiKhach || '',
+      emailKhach: emailKhach || '',
+      diaChiKhach: diaChiKhach || '',
       loaiDonHang: loaiDonHang || 'truc_tiep',
       danhSachSanPham: verifiedProducts,
       tongTien,
       tienGiamGia: actualTienGiamGia,
       tienDatCoc: Number(tienDatCoc) || 0,
       tienDaThanhToan: Number(tienDaThanhToan) || 0,
+      tienConNo,
       trangThai: status,
       nguoiBan: req.user._id,
       ghiChu: ghiChu || ''
     });
 
-    // 3. Nếu đơn hàng hoàn thành hoặc đang giao -> Trừ kho và tạo Dòng tiền thu
-    if (status === 'hoan_thanh' || status === 'dang_giao') {
+    // 3. Nếu đơn hàng hoàn thành, đang giao hoặc còn nợ -> Trừ kho và tạo Dòng tiền thu
+    if (status === 'hoan_thanh' || status === 'dang_giao' || status === 'con_no') {
       // Ghi log biến động LichSuKho (soLuongThayDoi < 0)
       for (const item of verifiedProducts) {
         await LichSuKho.create({
@@ -249,10 +255,15 @@ const taoDonHang = async (req, res) => {
       }
     }
 
+    await order.populate([
+      { path: 'nguoiBan', select: 'hoTen tenDangNhap vaiTro' },
+      { path: 'danhSachSanPham.sanPhamId', select: 'anhSanPham', model: 'SanPham' }
+    ]);
+
     // Phát tín hiệu socket real-time
     if (req.io) {
       req.io.emit('order:change', { action: 'create', data: order });
-      if (status === 'hoan_thanh' || status === 'dang_giao') {
+      if (status === 'hoan_thanh' || status === 'dang_giao' || status === 'con_no') {
         req.io.emit('stock:change', { action: 'deduct', source: 'order', orderId: order._id });
       }
       req.io.emit('cashflow:change', { action: 'create', source: 'order' });
@@ -365,6 +376,10 @@ const traHang = async (req, res) => {
       order.trangThai = 'da_tra';
     }
 
+    // Cập nhật lại số tiền nợ còn lại (nếu đã trả hết hàng thì nợ = 0)
+    const finalAmount = order.tongTien - (order.tienGiamGia || 0);
+    order.tienConNo = order.trangThai === 'da_tra' ? 0 : Math.max(0, finalAmount - order.tienDaThanhToan - order.tienDatCoc);
+
     await order.save();
 
     // 3. Tự động tạo Phiếu Chi dòng tiền (Hoàn lại tiền cho khách)
@@ -380,6 +395,11 @@ const traHang = async (req, res) => {
         nguoiThucHien: req.user._id
       });
     }
+
+    await order.populate([
+      { path: 'nguoiBan', select: 'hoTen tenDangNhap vaiTro' },
+      { path: 'danhSachSanPham.sanPhamId', select: 'anhSanPham', model: 'SanPham' }
+    ]);
 
     // Phát tín hiệu real-time
     if (req.io) {
@@ -412,32 +432,28 @@ const capNhatTrangThaiDonHang = async (req, res) => {
       throw new Error('Không tìm thấy đơn hàng');
     }
 
-    if (order.trangThai === 'hoan_thanh' || order.trangThai === 'da_tra') {
+    if (order.trangThai === 'hoan_thanh' || order.trangThai === 'con_no' || order.trangThai === 'da_tra') {
       res.status(400);
-      throw new Error('Đơn hàng đã ở trạng thái hoàn thành hoặc đã trả hàng, không thể thay đổi trạng thái');
+      throw new Error('Đơn hàng đã ở trạng thái hoàn thành, còn nợ hoặc đã trả hàng, không thể thay đổi trạng thái');
     }
 
     const previousStatus = order.trangThai;
-    order.trangThai = trangThai;
+    const finalAmount = order.tongTien - (order.tienGiamGia || 0);
+    const calculatedDebt = Math.max(0, finalAmount - order.tienDaThanhToan - order.tienDatCoc);
 
-    // Logic: Nếu chuyển đổi trạng thái từ 'cho_xuly' (đặt hàng trước) sang 'hoan_thanh' hoặc 'dang_giao'
+    let targetStatus = trangThai;
+    if (targetStatus === 'hoan_thanh' && calculatedDebt > 0) {
+      targetStatus = 'con_no';
+    }
+
+    order.trangThai = targetStatus;
+
+    // Logic: Nếu chuyển đổi trạng thái từ 'cho_xuly' (đặt hàng trước) sang 'hoan_thanh'/'con_no' hoặc 'dang_giao'
     if (
       (previousStatus === 'cho_xuly') &&
-      (trangThai === 'hoan_thanh' || trangThai === 'dang_giao')
+      (targetStatus === 'hoan_thanh' || targetStatus === 'con_no' || targetStatus === 'dang_giao')
     ) {
-      // 1. Kiểm tra kho khả dụng trước khi trừ kho thực tế
-      for (const item of order.danhSachSanPham) {
-        const stockResult = await LichSuKho.aggregate([
-          { $match: { sanPhamId: item.sanPhamId } },
-          { $group: { _id: "$sanPhamId", tonKho: { $sum: "$soLuongThayDoi" } } }
-        ]);
 
-        const currentStock = stockResult.length > 0 ? stockResult[0].tonKho : 0;
-        if (currentStock < item.soLuong) {
-          res.status(400);
-          throw new Error(`Sản phẩm SKU: ${item.maSKU} không đủ hàng tồn kho để xuất. (Tồn hiện tại: ${currentStock})`);
-        }
-      }
 
       // 2. Trừ kho
       for (const item of order.danhSachSanPham) {
@@ -451,28 +467,21 @@ const capNhatTrangThaiDonHang = async (req, res) => {
         });
       }
 
-      // 3. Thu phần tiền còn lại
-      const remainingPayment = order.tienDaThanhToan - order.tienDatCoc;
-      if (remainingPayment > 0) {
-        const maGiaoDich = await generateMaGiaoDich('thu');
-        await ThuChi.create({
-          maGiaoDich,
-          loaiGiaoDich: 'thu',
-          danhMuc: 'ban_hang',
-          soTien: remainingPayment,
-          maThamChieu: order._id,
-          moTa: `Thu tiền hoàn tất đơn hàng ${order.maDonHang}`,
-          nguoiThucHien: req.user._id
-        });
-      }
     }
 
+    // Cập nhật lại số tiền nợ còn lại (nếu đã trả hết hàng thì nợ = 0)
+    order.tienConNo = order.trangThai === 'da_tra' ? 0 : calculatedDebt;
+
     await order.save();
+    await order.populate([
+      { path: 'nguoiBan', select: 'hoTen tenDangNhap vaiTro' },
+      { path: 'danhSachSanPham.sanPhamId', select: 'anhSanPham', model: 'SanPham' }
+    ]);
 
     // Phát tín hiệu real-time
     if (req.io) {
       req.io.emit('order:change', { action: 'update_status', data: order });
-      if (trangThai === 'hoan_thanh' || trangThai === 'dang_giao') {
+      if (targetStatus === 'hoan_thanh' || targetStatus === 'con_no' || targetStatus === 'dang_giao') {
         req.io.emit('stock:change', { action: 'deduct', source: 'order', orderId: order._id });
         req.io.emit('cashflow:change', { action: 'create', source: 'order_complete' });
       }
@@ -489,10 +498,142 @@ const capNhatTrangThaiDonHang = async (req, res) => {
   }
 };
 
+// @desc    Chỉnh sửa thông tin đơn hàng & thanh toán
+// @route   PUT /api/orders/:id
+// @access  Private
+const capNhatDonHang = async (req, res) => {
+  try {
+    const { tenKhachHang, soDienThoaiKhach, emailKhach, diaChiKhach, ghiChu, tienDaThanhToan } = req.body;
+    const order = await DonHang.findById(req.params.id);
+
+    if (!order) {
+      res.status(404);
+      throw new Error('Không tìm thấy đơn hàng');
+    }
+
+    if (tenKhachHang !== undefined) order.tenKhachHang = tenKhachHang;
+    if (soDienThoaiKhach !== undefined) order.soDienThoaiKhach = soDienThoaiKhach;
+    if (emailKhach !== undefined) order.emailKhach = emailKhach;
+    if (diaChiKhach !== undefined) order.diaChiKhach = diaChiKhach;
+    if (ghiChu !== undefined) order.ghiChu = ghiChu;
+
+    const finalAmount = order.tongTien - (order.tienGiamGia || 0);
+
+    if (tienDaThanhToan !== undefined) {
+      const parsedNewPaid = Number(tienDaThanhToan) || 0;
+      const difference = parsedNewPaid - order.tienDaThanhToan;
+      if (difference > 0) {
+        const maGiaoDich = await generateMaGiaoDich('thu');
+        await ThuChi.create({
+          maGiaoDich,
+          loaiGiaoDich: 'thu',
+          danhMuc: 'ban_hang',
+          soTien: difference,
+          maThamChieu: order._id,
+          moTa: `Thu thêm tiền cho đơn hàng ${order.maDonHang}`,
+          nguoiThucHien: req.user._id
+        });
+      } else if (difference < 0) {
+        const maGiaoDich = await generateMaGiaoDich('chi');
+        await ThuChi.create({
+          maGiaoDich,
+          loaiGiaoDich: 'chi',
+          danhMuc: 'chi_khac',
+          soTien: Math.abs(difference),
+          maThamChieu: order._id,
+          moTa: `Hoàn bớt tiền thanh toán cho đơn hàng ${order.maDonHang}`,
+          nguoiThucHien: req.user._id
+        });
+      }
+      order.tienDaThanhToan = parsedNewPaid;
+    }
+
+    // Cập nhật lại số tiền nợ còn lại
+    order.tienConNo = order.trangThai === 'da_tra' ? 0 : Math.max(0, finalAmount - order.tienDaThanhToan - order.tienDatCoc);
+
+    // Nếu đơn hàng đã hoàn thành hoặc đang nợ, cập nhật lại trạng thái theo số nợ mới
+    if (order.trangThai === 'hoan_thanh' || order.trangThai === 'con_no') {
+      order.trangThai = order.tienConNo > 0 ? 'con_no' : 'hoan_thanh';
+    }
+
+    await order.save();
+    await order.populate([
+      { path: 'nguoiBan', select: 'hoTen tenDangNhap vaiTro' },
+      { path: 'danhSachSanPham.sanPhamId', select: 'anhSanPham', model: 'SanPham' }
+    ]);
+
+    // Phát tín hiệu real-time
+    if (req.io) {
+      req.io.emit('order:change', { action: 'update', data: order });
+      req.io.emit('cashflow:change', { action: 'create', source: 'order_update' });
+    }
+
+    res.json({
+      success: true,
+      message: 'Cập nhật đơn hàng thành công',
+      data: order
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500);
+    throw new Error(error.message || 'Lỗi khi cập nhật đơn hàng');
+  }
+};
+
+// @desc    Xóa đơn hàng
+// @route   DELETE /api/orders/:id
+// @access  Private
+const xoaDonHang = async (req, res) => {
+  try {
+    const order = await DonHang.findById(req.params.id);
+
+    if (!order) {
+      res.status(404);
+      throw new Error('Không tìm thấy đơn hàng');
+    }
+
+    // 1. Nếu đơn hàng đã hoàn thành, đang giao hoặc còn nợ -> Hoàn lại tồn kho
+    if (order.trangThai === 'hoan_thanh' || order.trangThai === 'dang_giao' || order.trangThai === 'con_no') {
+      for (const item of order.danhSachSanPham) {
+        await LichSuKho.create({
+          sanPhamId: item.sanPhamId,
+          maSKU: item.maSKU,
+          soLuongThayDoi: item.soLuong, // Cộng lại kho
+          loaiThayDoi: 'tra_hang', // Ghi nhận là trả hàng/hủy đơn
+          maThamChieu: order._id,
+          nguoiThucHien: req.user._id
+        });
+      }
+    }
+
+    // 2. Xóa các phiếu thu chi liên quan đến đơn hàng này
+    await ThuChi.deleteMany({ maThamChieu: order._id });
+
+    // 3. Xóa đơn hàng
+    await order.deleteOne();
+
+    // Phát tín hiệu real-time
+    if (req.io) {
+      req.io.emit('order:change', { action: 'delete', orderId: req.params.id });
+      req.io.emit('stock:change', { action: 'return', source: 'order', orderId: req.params.id });
+      req.io.emit('cashflow:change', { action: 'delete', source: 'order' });
+    }
+
+    res.json({
+      success: true,
+      message: 'Xóa đơn hàng thành công'
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500);
+    throw new Error(error.message || 'Lỗi khi xóa đơn hàng');
+  }
+};
+
 module.exports = {
   danhSachDonHang,
   chiTietDonHang,
   taoDonHang,
   traHang,
-  capNhatTrangThaiDonHang
+  capNhatTrangThaiDonHang,
+  capNhatDonHang,
+  xoaDonHang
 };

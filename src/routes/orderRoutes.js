@@ -6,7 +6,9 @@ const {
   chiTietDonHang,
   taoDonHang,
   traHang,
-  capNhatTrangThaiDonHang
+  capNhatTrangThaiDonHang,
+  capNhatDonHang,
+  xoaDonHang
 } = require('../controllers/orderController');
 
 router.route('/')
@@ -19,7 +21,9 @@ router.route('/return/:id')
   .post(protect, traHang);
 
 router.route('/:id')
-  .get(protect, chiTietDonHang);
+  .get(protect, chiTietDonHang)
+  .put(protect, capNhatDonHang)
+  .delete(protect, xoaDonHang);
 
 router.route('/:id/status')
   .put(protect, capNhatTrangThaiDonHang);

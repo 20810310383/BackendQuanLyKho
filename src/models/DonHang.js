@@ -16,6 +16,16 @@ const donHangSchema = new mongoose.Schema({
     default: '',
     trim: true
   },
+  emailKhach: {
+    type: String,
+    default: '',
+    trim: true
+  },
+  diaChiKhach: {
+    type: String,
+    default: '',
+    trim: true
+  },
   loaiDonHang: {
     type: String,
     enum: ['truc_tiep', 'dat_hang'],
@@ -46,6 +56,10 @@ const donHangSchema = new mongoose.Schema({
       type: Number,
       required: true,
       min: 0 // Giá bán tại thời điểm mua lẻ
+    },
+    anhSanPham: {
+      type: String,
+      default: ''
     }
   }],
   tongTien: {
@@ -70,9 +84,14 @@ const donHangSchema = new mongoose.Schema({
     min: 0,
     default: 0
   },
+  tienConNo: {
+    type: Number,
+    min: 0,
+    default: 0
+  },
   trangThai: {
     type: String,
-    enum: ['cho_xuly', 'dang_giao', 'hoan_thanh', 'da_tra'],
+    enum: ['cho_xuly', 'dang_giao', 'hoan_thanh', 'da_tra', 'con_no'],
     default: 'hoan_thanh'
   },
   nguoiBan: {
