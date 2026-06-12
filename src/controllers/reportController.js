@@ -176,30 +176,53 @@ const baoCaoLoiNhuan = async (req, res) => {
     const denNgay = denNgayStr ? new Date(denNgayStr) : new Date();
     denNgay.setHours(23, 59, 59, 999);
 
-    // 1. Lấy toàn bộ đơn hàng hoàn thành trong kỳ để tính doanh thu & giá vốn (COGS)
+    // 1. Lấy toàn bộ đơn hàng có xuất kho trong kỳ để tính doanh thu & giá vốn (COGS)
     const orders = await DonHang.find({
-      trangThai: { $in: ['hoan_thanh', 'dang_giao'] },
+      trangThai: { $in: ['hoan_thanh', 'dang_giao', 'con_no', 'da_tra'] },
       createdAt: { $gte: tuNgay, $lte: denNgay }
-    }).populate('danhSachSanPham.sanPhamId');
+    }).populate({
+      path: 'danhSachSanPham.sanPhamId',
+      model: 'SanPham'
+    });
 
     let doanhThuBanHang = 0;
     let giaVonHangBan = 0; // COGS
 
     orders.forEach(order => {
-      doanhThuBanHang += order.tienDaThanhToan;
+      // Doanh thu thực tế bằng tiền đã thanh toán (bao gồm cả cọc) trừ đi tiền đã hoàn lại khi trả hàng
+      const tienHoan = (order.chiTietTraHang && order.chiTietTraHang.tienHoanLai) || 0;
+      doanhThuBanHang += (order.tienDaThanhToan + order.tienDatCoc - tienHoan);
+
       order.danhSachSanPham.forEach(item => {
+        // Tìm số lượng sản phẩm này đã trả lại trong đơn hàng
+        let soLuongTra = 0;
+        if (order.chiTietTraHang && order.chiTietTraHang.sanPhamTraLai) {
+          const retItem = order.chiTietTraHang.sanPhamTraLai.find(
+            r => r.sanPhamId && r.sanPhamId.toString() === (item.sanPhamId?._id || item.sanPhamId).toString()
+          );
+          if (retItem) {
+            soLuongTra = retItem.soLuong;
+          }
+        }
+        const soLuongThucBan = Math.max(0, item.soLuong - soLuongTra);
+
         // Lấy giá nhập gốc tại thời điểm lập báo cáo để làm cơ sở tính giá vốn
         const giaNhap = item.sanPhamId ? item.sanPhamId.giaNhap : (item.donGia * 0.6); // Fallback nếu SP bị xóa
-        giaVonHangBan += item.soLuong * giaNhap;
+        giaVonHangBan += soLuongThucBan * giaNhap;
       });
     });
 
     // 2. Lấy các khoản chi phí khác từ sổ quỹ thủ công trong kỳ
+    // Loại trừ các khoản chi hoàn tiền tự động khi trả hàng bằng cách kiểm tra maThamChieu
     const otherExpenses = await ThuChi.aggregate([
       {
         $match: {
           loaiGiaoDich: 'chi',
           danhMuc: { $in: ['chi_mat_bang', 'chi_luong', 'chi_dien_nuoc', 'chi_khac'] },
+          $or: [
+            { maThamChieu: { $exists: false } },
+            { maThamChieu: null }
+          ],
           ngayGiaoDich: { $gte: tuNgay, $lte: denNgay }
         }
       },
