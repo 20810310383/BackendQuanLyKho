@@ -60,7 +60,9 @@ const login = async (req, res, next) => {
         tenDangNhap: user.tenDangNhap,
         hoTen: user.hoTen,
         vaiTro: user.vaiTro,
-        anhDaiDien: user.anhDaiDien
+        anhDaiDien: user.anhDaiDien,
+        accessToken,
+        refreshToken
       });
     } else {
       res.status(401);
@@ -94,9 +96,9 @@ const logout = async (req, res, next) => {
 
 // @desc    Làm mới Access Token (Refresh Token Rotation)
 // @route   POST /api/auth/refresh
-// @access  Public (Thông qua HttpOnly Cookie)
+// @access  Public (Thông qua HttpOnly Cookie hoặc JSON Body)
 const refresh = async (req, res, next) => {
-  const refreshToken = req.cookies.refreshToken;
+  const refreshToken = req.cookies.refreshToken || req.body.refreshToken;
 
   if (!refreshToken) {
     res.status(401);
@@ -127,7 +129,11 @@ const refresh = async (req, res, next) => {
     res.cookie('accessToken', newAccessToken, cookieOptions);
     res.cookie('refreshToken', newRefreshToken, refreshCookieOptions);
 
-    res.json({ message: 'Làm mới token thành công' });
+    res.json({
+      message: 'Làm mới token thành công',
+      accessToken: newAccessToken,
+      refreshToken: newRefreshToken
+    });
   } catch (error) {
     console.error('Lỗi khi refresh token:', error.message);
     res.status(401);

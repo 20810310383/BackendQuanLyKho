@@ -4,8 +4,10 @@ const NguoiDung = require('../models/NguoiDung');
 const protect = async (req, res, next) => {
   let token;
 
-  // Lấy token từ HTTP-Only Cookie
-  if (req.cookies && req.cookies.accessToken) {
+  // Lấy token từ Authorization Header hoặc HTTP-Only Cookie
+  if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
+    token = req.headers.authorization.split(' ')[1];
+  } else if (req.cookies && req.cookies.accessToken) {
     token = req.cookies.accessToken;
   }
 

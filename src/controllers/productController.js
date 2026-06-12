@@ -27,12 +27,22 @@ const danhSachSanPham = async (req, res) => {
 
     // Bộ lọc khoảng giá bán
     if (req.query.giaMin !== undefined || req.query.giaMax !== undefined) {
-      query.giaBan = {};
-      if (req.query.giaMin !== undefined) {
-        query.giaBan.$gte = Number(req.query.giaMin);
+      const gMin = Number(req.query.giaMin);
+      const gMax = Number(req.query.giaMax);
+      const priceFilter = {};
+      let hasFilter = false;
+
+      if (req.query.giaMin !== undefined && req.query.giaMin !== '' && req.query.giaMin !== 'null' && !isNaN(gMin)) {
+        priceFilter.$gte = gMin;
+        hasFilter = true;
       }
-      if (req.query.giaMax !== undefined) {
-        query.giaBan.$lte = Number(req.query.giaMax);
+      if (req.query.giaMax !== undefined && req.query.giaMax !== '' && req.query.giaMax !== 'null' && !isNaN(gMax)) {
+        priceFilter.$lte = gMax;
+        hasFilter = true;
+      }
+
+      if (hasFilter) {
+        query.giaBan = priceFilter;
       }
     }
 
@@ -44,6 +54,8 @@ const danhSachSanPham = async (req, res) => {
       .lean();
 
     const total = await SanPham.countDocuments(query);
+    const totalActive = await SanPham.countDocuments({ trangThai: true });
+    const totalInactive = await SanPham.countDocuments({ trangThai: false });
 
     // Tính toán tồn kho động cho các sản phẩm trong trang hiện tại
     const sanPhamIds = sanPhams.map(p => p._id);
@@ -69,7 +81,9 @@ const danhSachSanPham = async (req, res) => {
         total,
         page,
         limit,
-        pages: Math.ceil(total / limit)
+        pages: Math.ceil(total / limit),
+        totalActive,
+        totalInactive
       }
     });
   } catch (error) {
@@ -116,22 +130,26 @@ const chiTietSanPham = async (req, res) => {
 // @access  Private/Admin
 const taoSanPham = async (req, res) => {
   try {
-    const { maSKU, tenSanPham, giaNhap, giaBan, donViTinh, anhSanPham, moTa, trangThai } = req.body;
+    const { tenSanPham, giaNhap, giaBan, donViTinh, anhSanPham, moTa, trangThai } = req.body;
 
-    if (!maSKU || !tenSanPham) {
+    if (!tenSanPham) {
       res.status(400);
-      throw new Error('Vui lòng cung cấp mã SKU và tên sản phẩm');
+      throw new Error('Vui lòng cung cấp tên sản phẩm');
     }
 
-    // Kiểm tra SKU đã tồn tại chưa
-    const skuExists = await SanPham.findOne({ maSKU: maSKU.toUpperCase() });
-    if (skuExists) {
-      res.status(400);
-      throw new Error('Mã SKU đã tồn tại trên hệ thống');
+    // Tự sinh mã SKU theo định dạng SPxxxxxx
+    const latestProduct = await SanPham.findOne({ maSKU: /^SP\d+$/ }).sort({ createdAt: -1 });
+    let nextNumber = 1;
+    if (latestProduct) {
+      const match = latestProduct.maSKU.match(/^SP(\d+)$/);
+      if (match) {
+        nextNumber = parseInt(match[1]) + 1;
+      }
     }
+    const generatedSKU = `SP${String(nextNumber).padStart(6, '0')}`;
 
     const sanPham = await SanPham.create({
-      maSKU: maSKU.toUpperCase(),
+      maSKU: generatedSKU,
       tenSanPham,
       giaNhap: Number(giaNhap) || 0,
       giaBan: Number(giaBan) || 0,
