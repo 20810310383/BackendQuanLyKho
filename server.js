@@ -15,11 +15,16 @@ dotenv.config();
 // Connect to MongoDB
 connectDB();
 
+// Cấu hình các domain frontend được phép truy cập
+const allowedOrigins = process.env.FRONTEND_URL
+  ? process.env.FRONTEND_URL.split(',').map(url => url.trim())
+  : [];
+
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: process.env.FRONTEND_URL,
+    origin: allowedOrigins,
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
     credentials: true
   }
@@ -64,7 +69,7 @@ app.use(helmet({
 
 // CORS configuration - chỉ cho phép domain nội bộ truy cập
 app.use(cors({
-  origin: process.env.FRONTEND_URL,
+  origin: allowedOrigins,
   credentials: true, // Cho phép nhận cookie từ frontend
 }));
 
