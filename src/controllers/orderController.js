@@ -226,14 +226,15 @@ const taoDonHang = async (req, res) => {
         });
       }
 
-      // Tạo Phiếu Thu dòng tiền loại 'ban_hang'
-      if (order.tienDaThanhToan > 0) {
+      // Tạo Phiếu Thu dòng tiền loại 'ban_hang' (Bao gồm cả tiền cọc + tiền thanh toán trực tiếp)
+      const tongThanhToan = (order.tienDaThanhToan || 0) + (order.tienDatCoc || 0);
+      if (tongThanhToan > 0) {
         const maGiaoDich = await generateMaGiaoDich('thu');
         await ThuChi.create({
           maGiaoDich,
           loaiGiaoDich: 'thu',
           danhMuc: 'ban_hang',
-          soTien: order.tienDaThanhToan,
+          soTien: tongThanhToan,
           maThamChieu: order._id,
           moTa: `Thu tiền đơn hàng ${order.maDonHang}`,
           nguoiThucHien: req.user._id
