@@ -3,6 +3,8 @@ const SanPham = require('../models/SanPham');
 const LichSuKho = require('../models/LichSuKho');
 const ThuChi = require('../models/ThuChi');
 const KhachHang = require('../models/KhachHang');
+const NhapHang = require('../models/NhapHang');
+
 
 // Helper sinh mã đơn hàng tự động: HD-YYYYMMDD-XXXX
 const generateMaDonHang = async () => {
@@ -54,6 +56,11 @@ const danhSachDonHang = async (req, res) => {
       query.loaiDonHang = req.query.loaiDonHang;
     }
 
+    // Bộ lọc khách hàng cụ thể
+    if (req.query.khachHangId) {
+      query.khachHangId = req.query.khachHangId;
+    }
+
     // Bộ lọc trạng thái đơn hàng
     if (req.query.trangThai) {
       query.trangThai = req.query.trangThai;
@@ -78,6 +85,11 @@ const danhSachDonHang = async (req, res) => {
         path: 'danhSachSanPham.sanPhamId',
         select: 'anhSanPham',
         model: 'SanPham'
+      })
+      .populate({
+        path: 'danhSachSanPham.nhapHangId',
+        select: 'maDonNhap',
+        model: 'NhapHang'
       })
       .sort({ createdAt: -1 })
       .skip(skip)
@@ -112,6 +124,11 @@ const chiTietDonHang = async (req, res) => {
       .populate({
         path: 'danhSachSanPham.sanPhamId',
         model: 'SanPham'
+      })
+      .populate({
+        path: 'danhSachSanPham.nhapHangId',
+        select: 'maDonNhap',
+        model: 'NhapHang'
       })
       .lean();
 
@@ -155,7 +172,7 @@ const taoDonHang = async (req, res) => {
       throw new Error('Đơn hàng phải có ít nhất một sản phẩm');
     }
 
-    // 1. Kiểm tra tồn kho động và tính tổng tiền
+    // 1. Kiểm tra tồn kho động và tính tổng tiền theo từng lô hàng
     let tongTien = 0;
     const verifiedProducts = [];
 
@@ -170,20 +187,39 @@ const taoDonHang = async (req, res) => {
         throw new Error(`Không tìm thấy sản phẩm ID: ${item.sanPhamId}`);
       }
 
-      // Kiểm tra tồn kho động nếu đơn hàng sẽ trừ kho ngay
+      if (!item.nhapHangId) {
+        res.status(400);
+        throw new Error(`Sản phẩm "${sp.tenSanPham}" chưa chọn lô hàng nhập kho để bán`);
+      }
+
+      const impSlip = await NhapHang.findById(item.nhapHangId);
+      if (!impSlip) {
+        res.status(400);
+        throw new Error(`Không tìm thấy lô hàng nhập kho ID: ${item.nhapHangId}`);
+      }
+
+      // Lấy giá bán lẻ của sản phẩm trong lô hàng này
+      const impProduct = impSlip.danhSachSanPham.find(p => p.sanPhamId.toString() === sp._id.toString());
+      const batchGiaBan = impProduct ? (impProduct.giaBan || sp.giaBan || 0) : (sp.giaBan || 0);
+
+      // Kiểm tra tồn kho động của lô hàng cụ thể nếu đơn hàng sẽ trừ kho ngay
       if (isDeductStock) {
-        const stockResult = await LichSuKho.aggregate([
-          { $match: { sanPhamId: sp._id } },
-          { $group: { _id: "$sanPhamId", tonKho: { $sum: "$soLuongThayDoi" } } }
-        ]);
-        const currentStock = stockResult.length > 0 ? stockResult[0].tonKho : 0;
+        const stockChanges = await LichSuKho.find({
+          sanPhamId: sp._id,
+          $or: [
+            { nhapHangId: item.nhapHangId },
+            { loaiThayDoi: 'nhap_hang', maThamChieu: item.nhapHangId }
+          ]
+        });
+        const currentStock = stockChanges.reduce((sum, log) => sum + log.soLuongThayDoi, 0);
+
         if (currentStock < item.soLuong) {
           res.status(400);
-          throw new Error(`Sản phẩm "${sp.tenSanPham}" không đủ hàng tồn kho (Tồn: ${currentStock}, Yêu cầu: ${item.soLuong})`);
+          throw new Error(`Sản phẩm "${sp.tenSanPham}" thuộc lô "${impSlip.maDonNhap}" không đủ hàng tồn kho (Tồn: ${currentStock}, Yêu cầu: ${item.soLuong})`);
         }
       }
 
-      const itemTotal = sp.giaBan * item.soLuong;
+      const itemTotal = batchGiaBan * item.soLuong;
       tongTien += itemTotal;
 
       verifiedProducts.push({
@@ -191,8 +227,9 @@ const taoDonHang = async (req, res) => {
         maSKU: sp.maSKU,
         tenSanPham: sp.tenSanPham,
         soLuong: item.soLuong,
-        donGia: sp.giaBan, // Lưu giá bán tại thời điểm này
-        anhSanPham: sp.anhSanPham || ''
+        donGia: batchGiaBan, // Lưu giá bán tại thời điểm này theo lô hàng
+        anhSanPham: sp.anhSanPham || '',
+        nhapHangId: item.nhapHangId
       });
     }
 
@@ -200,8 +237,57 @@ const taoDonHang = async (req, res) => {
     const finalAmount = tongTien - actualTienGiamGia;
     const tienConNo = Math.max(0, finalAmount - (Number(tienDaThanhToan) || 0) - (Number(tienDatCoc) || 0));
 
+    // Xử lý lưu hoặc tạo thông tin khách hàng (model KhachHang)
+    let resolvedKhachHangId = khachHangId || null;
+
+    if (!resolvedKhachHangId && soDienThoaiKhach && soDienThoaiKhach.trim() !== '') {
+      const trimmedPhone = soDienThoaiKhach.trim();
+      const existingKh = await KhachHang.findOne({ soDienThoai: trimmedPhone });
+      if (existingKh) {
+        existingKh.tenKhachHang = tenKhachHang || existingKh.tenKhachHang;
+        if (emailKhach) existingKh.email = emailKhach;
+        if (diaChiKhach) existingKh.diaChi = diaChiKhach;
+        existingKh.tongMuaHang += finalAmount;
+        existingKh.noHienTai += tienConNo;
+        await existingKh.save();
+        resolvedKhachHangId = existingKh._id;
+      } else {
+        // Tự sinh mã khách hàng KHxxxxxx
+        const latestCustomer = await KhachHang.findOne({ maKhachHang: /^KH\d+$/ }).sort({ createdAt: -1 });
+        let nextNum = 1;
+        if (latestCustomer) {
+          const match = latestCustomer.maKhachHang.match(/^KH(\d+)$/);
+          if (match) {
+            nextNum = parseInt(match[1]) + 1;
+          }
+        }
+        const generatedMaKH = `KH${String(nextNum).padStart(6, '0')}`;
+
+        const newKh = await KhachHang.create({
+          maKhachHang: generatedMaKH,
+          tenKhachHang: tenKhachHang || 'Khách hàng',
+          soDienThoai: trimmedPhone,
+          email: emailKhach || '',
+          diaChi: diaChiKhach || '',
+          tongMuaHang: finalAmount,
+          noHienTai: tienConNo
+        });
+        resolvedKhachHangId = newKh._id;
+      }
+    } else if (resolvedKhachHangId) {
+      const khachHang = await KhachHang.findById(resolvedKhachHangId);
+      if (khachHang) {
+        khachHang.tongMuaHang += finalAmount;
+        khachHang.noHienTai += tienConNo;
+        if (tenKhachHang) khachHang.tenKhachHang = tenKhachHang;
+        if (soDienThoaiKhach) khachHang.soDienThoai = soDienThoaiKhach;
+        if (emailKhach) khachHang.email = emailKhach;
+        if (diaChiKhach) khachHang.diaChi = diaChiKhach;
+        await khachHang.save();
+      }
+    }
+
     // Xác định trạng thái ban đầu của đơn hàng
-    // Đơn trực tiếp (POS) mặc định là 'hoan_thanh', đơn đặt trước có thể là 'cho_xuly'
     let status = trangThai || (loaiDonHang === 'dat_hang' ? 'cho_xuly' : 'hoan_thanh');
     if (status === 'hoan_thanh' && tienConNo > 0) {
       status = 'con_no';
@@ -213,7 +299,7 @@ const taoDonHang = async (req, res) => {
     // 2. Tạo đơn hàng
     const order = await DonHang.create({
       maDonHang,
-      khachHangId: khachHangId || null,
+      khachHangId: resolvedKhachHangId,
       tenKhachHang: tenKhachHang || 'Khách vãng lai',
       soDienThoaiKhach: soDienThoaiKhach || '',
       emailKhach: emailKhach || '',
@@ -230,19 +316,9 @@ const taoDonHang = async (req, res) => {
       ghiChu: ghiChu || ''
     });
 
-    // Cập nhật nợ và doanh số khách hàng nếu có
-    if (khachHangId) {
-      const khachHang = await KhachHang.findById(khachHangId);
-      if (khachHang) {
-        khachHang.tongMuaHang += finalAmount;
-        khachHang.noHienTai += tienConNo;
-        await khachHang.save();
-      }
-    }
-
     // 3. Nếu đơn hàng hoàn thành, đang giao hoặc còn nợ -> Trừ kho và tạo Dòng tiền thu
     if (status === 'hoan_thanh' || status === 'dang_giao' || status === 'con_no') {
-      // Ghi log biến động LichSuKho (soLuongThayDoi < 0)
+      // Ghi log biến động LichSuKho (soLuongThayDoi < 0) theo từng lô hàng
       for (const item of verifiedProducts) {
         await LichSuKho.create({
           sanPhamId: item.sanPhamId,
@@ -250,11 +326,12 @@ const taoDonHang = async (req, res) => {
           soLuongThayDoi: -item.soLuong,
           loaiThayDoi: 'ban_hang',
           maThamChieu: order._id,
+          nhapHangId: item.nhapHangId, // Trừ đúng lô hàng đã chọn
           nguoiThucHien: req.user._id
         });
       }
 
-      // Tạo Phiếu Thu dòng tiền loại 'ban_hang' (Bao gồm cả tiền cọc + tiền thanh toán trực tiếp)
+      // Tạo Phiếu Thu dòng tiền loại 'ban_hang'
       const tongThanhToan = (order.tienDaThanhToan || 0) + (order.tienDatCoc || 0);
       if (tongThanhToan > 0) {
         const maGiaoDich = await generateMaGiaoDich('thu');
@@ -286,7 +363,8 @@ const taoDonHang = async (req, res) => {
 
     await order.populate([
       { path: 'nguoiBan', select: 'hoTen tenDangNhap vaiTro' },
-      { path: 'danhSachSanPham.sanPhamId', select: 'anhSanPham', model: 'SanPham' }
+      { path: 'danhSachSanPham.sanPhamId', select: 'anhSanPham', model: 'SanPham' },
+      { path: 'danhSachSanPham.nhapHangId', select: 'maDonNhap', model: 'NhapHang' }
     ]);
 
     // Phát tín hiệu socket real-time
@@ -393,6 +471,7 @@ const traHang = async (req, res) => {
         soLuongThayDoi: item.soLuong, // Cộng kho trở lại
         loaiThayDoi: 'tra_hang',
         maThamChieu: order._id,
+        nhapHangId: itemGoc.nhapHangId || null,
         nguoiThucHien: req.user._id
       });
     }
@@ -447,7 +526,8 @@ const traHang = async (req, res) => {
 
     await order.populate([
       { path: 'nguoiBan', select: 'hoTen tenDangNhap vaiTro' },
-      { path: 'danhSachSanPham.sanPhamId', select: 'anhSanPham', model: 'SanPham' }
+      { path: 'danhSachSanPham.sanPhamId', select: 'anhSanPham', model: 'SanPham' },
+      { path: 'danhSachSanPham.nhapHangId', select: 'maDonNhap', model: 'NhapHang' }
     ]);
 
     // Phát tín hiệu real-time
@@ -512,6 +592,7 @@ const capNhatTrangThaiDonHang = async (req, res) => {
           soLuongThayDoi: -item.soLuong,
           loaiThayDoi: 'ban_hang',
           maThamChieu: order._id,
+          nhapHangId: item.nhapHangId || null,
           nguoiThucHien: req.user._id
         });
       }
@@ -524,7 +605,8 @@ const capNhatTrangThaiDonHang = async (req, res) => {
     await order.save();
     await order.populate([
       { path: 'nguoiBan', select: 'hoTen tenDangNhap vaiTro' },
-      { path: 'danhSachSanPham.sanPhamId', select: 'anhSanPham', model: 'SanPham' }
+      { path: 'danhSachSanPham.sanPhamId', select: 'anhSanPham', model: 'SanPham' },
+      { path: 'danhSachSanPham.nhapHangId', select: 'maDonNhap', model: 'NhapHang' }
     ]);
 
     // Phát tín hiệu real-time
@@ -618,7 +700,8 @@ const capNhatDonHang = async (req, res) => {
     await order.save();
     await order.populate([
       { path: 'nguoiBan', select: 'hoTen tenDangNhap vaiTro' },
-      { path: 'danhSachSanPham.sanPhamId', select: 'anhSanPham', model: 'SanPham' }
+      { path: 'danhSachSanPham.sanPhamId', select: 'anhSanPham', model: 'SanPham' },
+      { path: 'danhSachSanPham.nhapHangId', select: 'maDonNhap', model: 'NhapHang' }
     ]);
 
     // Phát tín hiệu real-time
@@ -659,6 +742,7 @@ const xoaDonHang = async (req, res) => {
           soLuongThayDoi: item.soLuong, // Cộng lại kho
           loaiThayDoi: 'tra_hang', // Ghi nhận là trả hàng/hủy đơn
           maThamChieu: order._id,
+          nhapHangId: item.nhapHangId || null,
           nguoiThucHien: req.user._id
         });
       }

@@ -65,6 +65,11 @@ const donHangSchema = new mongoose.Schema({
     anhSanPham: {
       type: String,
       default: ''
+    },
+    nhapHangId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'NhapHang',
+      default: null
     }
   }],
   tongTien: {

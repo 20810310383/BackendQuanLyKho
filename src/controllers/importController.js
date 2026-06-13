@@ -199,7 +199,7 @@ const taoDonNhap = async (req, res) => {
       }
 
       const giamGiaItem = Number(item.giamGia) || 0;
-      const giaBanItem = Number(item.giaBan) || 0;
+      const giaBanItem = Number(item.giaBan) || sp.giaBan || 0;
       const itemTotal = (item.donGiaNhap - giamGiaItem) * item.soLuong;
       tongTien += itemTotal;
 
@@ -265,6 +265,7 @@ const taoDonNhap = async (req, res) => {
           soLuongThayDoi: item.soLuong, // Cộng kho
           loaiThayDoi: 'nhap_hang',
           maThamChieu: importOrder._id,
+          nhapHangId: importOrder._id,
           nguoiThucHien: req.user._id
         });
       }
@@ -363,6 +364,7 @@ const huyDonNhap = async (req, res) => {
         soLuongThayDoi: -item.soLuong, // Trừ kho
         loaiThayDoi: 'dieu_chinh_thu_cong', // Phân loại điều chỉnh do hủy đơn nhập
         maThamChieu: importOrder._id,
+        nhapHangId: importOrder._id,
         nguoiThucHien: req.user._id
       });
     }
@@ -457,6 +459,7 @@ const hoanThanhPhieuTam = async (req, res) => {
         soLuongThayDoi: item.soLuong,
         loaiThayDoi: 'nhap_hang',
         maThamChieu: importOrder._id,
+        nhapHangId: importOrder._id,
         nguoiThucHien: req.user._id
       });
     }
@@ -553,6 +556,7 @@ const capNhatNhapHang = async (req, res) => {
           soLuongThayDoi: -item.soLuong,
           loaiThayDoi: 'dieu_chinh_thu_cong',
           maThamChieu: importOrder._id,
+          nhapHangId: importOrder._id,
           nguoiThucHien: req.user._id
         });
       }
@@ -584,7 +588,7 @@ const capNhatNhapHang = async (req, res) => {
       }
 
       const giamGiaItem = Number(item.giamGia) || 0;
-      const giaBanItem = Number(item.giaBan) || 0;
+      const giaBanItem = Number(item.giaBan) || sp.giaBan || 0;
       const itemTotal = (item.donGiaNhap - giamGiaItem) * item.soLuong;
       newTongTien += itemTotal;
 
@@ -634,6 +638,7 @@ const capNhatNhapHang = async (req, res) => {
           soLuongThayDoi: item.soLuong,
           loaiThayDoi: 'nhap_hang',
           maThamChieu: importOrder._id,
+          nhapHangId: importOrder._id,
           nguoiThucHien: req.user._id
         });
       }

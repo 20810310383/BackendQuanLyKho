@@ -8,7 +8,8 @@ const {
   taoSanPham,
   capNhatSanPham,
   xoaSanPham,
-  dieuChinhTonKho
+  dieuChinhTonKho,
+  danhSachLoHangTonKho
 } = require('../controllers/productController');
 const { importExcelProducts } = require('../controllers/importExcelController');
 
@@ -37,6 +38,8 @@ router.route('/')
   .post(protect, isAdmin, taoSanPham);
 
 router.post('/import-excel', protect, isAdmin, excelUpload.single('excelFile'), importExcelProducts);
+
+router.get('/batches', protect, danhSachLoHangTonKho);
 
 router.route('/:id')
   .get(protect, chiTietSanPham)

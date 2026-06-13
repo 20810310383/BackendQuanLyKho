@@ -13,7 +13,39 @@ const { notFound, errorHandler } = require('./src/middlewares/errorMiddleware');
 dotenv.config();
 
 // Connect to MongoDB
-connectDB();
+connectDB().then(() => {
+  // Chạy migration tự động cập nhật và đóng băng giá bán lẻ cho các hóa đơn nhập cũ
+  const migrateImportPrices = async () => {
+    try {
+      const NhapHang = require('./src/models/NhapHang');
+      const imports = await NhapHang.find().populate('danhSachSanPham.sanPhamId');
+      let updatedCount = 0;
+      for (const imp of imports) {
+        let changed = false;
+        for (const item of imp.danhSachSanPham) {
+          if (!item.giaBan || item.giaBan === 0) {
+            const spGiaBan = item.sanPhamId ? (item.sanPhamId.giaBan || 0) : 0;
+            item.giaBan = spGiaBan;
+            changed = true;
+          }
+        }
+        if (changed) {
+          await NhapHang.updateOne(
+            { _id: imp._id },
+            { $set: { danhSachSanPham: imp.danhSachSanPham } }
+          );
+          updatedCount++;
+        }
+      }
+      if (updatedCount > 0) {
+        console.log(`[Migration] Đã chuẩn hóa giá bán lẻ cho ${updatedCount} phiếu nhập cũ.`);
+      }
+    } catch (err) {
+      console.error('[Migration] Lỗi khi chạy migration giá bán lẻ:', err);
+    }
+  };
+  migrateImportPrices();
+});
 
 // Cấu hình các domain frontend được phép truy cập
 const allowedOrigins = process.env.FRONTEND_URL

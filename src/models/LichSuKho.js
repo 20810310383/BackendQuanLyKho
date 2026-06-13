@@ -26,6 +26,11 @@ const lichSuKhoSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     default: null // Liên kết tới DonHang hoặc NhapHang tương ứng
   },
+  nhapHangId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'NhapHang',
+    default: null // Liên kết tới lô NhapHang cụ thể để trừ tồn kho theo lô
+  },
   nguoiThucHien: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'NguoiDung',

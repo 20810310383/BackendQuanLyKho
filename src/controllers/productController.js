@@ -1,5 +1,6 @@
 const SanPham = require('../models/SanPham');
 const LichSuKho = require('../models/LichSuKho');
+const NhapHang = require('../models/NhapHang');
 
 // @desc    Lấy danh sách sản phẩm (có phân trang, bộ lọc, tìm kiếm, tính tồn kho động)
 // @route   GET /api/products
@@ -364,11 +365,85 @@ const dieuChinhTonKho = async (req, res) => {
   }
 };
 
+// @desc    Lấy danh sách các lô hàng đang còn tồn kho (Bán hàng theo lô)
+// @route   GET /api/products/batches
+// @access  Private
+const danhSachLoHangTonKho = async (req, res) => {
+  try {
+    const { search } = req.query;
+
+    // 1. Lấy toàn bộ phiếu nhập đã hoàn thành
+    const imports = await NhapHang.find({ trangThai: 'hoan_thanh' })
+      .populate('danhSachSanPham.sanPhamId')
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const batches = [];
+
+    for (const imp of imports) {
+      for (const item of imp.danhSachSanPham) {
+        if (!item.sanPhamId) continue;
+
+        const productId = item.sanPhamId._id;
+        const importOrderId = imp._id;
+
+        // 2. Tính số lượng tồn kho của sản phẩm này trong lô hàng này
+        const stockChanges = await LichSuKho.find({
+          sanPhamId: productId,
+          $or: [
+            { nhapHangId: importOrderId },
+            { loaiThayDoi: 'nhap_hang', maThamChieu: importOrderId }
+          ]
+        });
+
+        const tonKho = stockChanges.reduce((sum, log) => sum + log.soLuongThayDoi, 0);
+
+        // Chỉ đưa vào danh sách nếu có tồn kho > 0 hoặc không có bộ lọc tìm kiếm và ta muốn trả về
+        if (tonKho > 0) {
+          batches.push({
+            nhapHangId: importOrderId,
+            maDonNhap: imp.maDonNhap,
+            sanPhamId: productId,
+            maSKU: item.maSKU,
+            tenSanPham: item.tenSanPham,
+            anhSanPham: item.sanPhamId.anhSanPham || '',
+            donViTinh: item.sanPhamId.donViTinh || 'Cái',
+            donGiaNhap: item.donGiaNhap,
+            giaBan: item.giaBan || item.sanPhamId.giaBan || 0,
+            tonKho: Math.max(0, tonKho),
+            createdAt: imp.createdAt
+          });
+        }
+      }
+    }
+
+    // Lọc theo từ khóa search (tên sản phẩm, mã SKU, hoặc mã đơn nhập)
+    let filteredBatches = batches;
+    if (search) {
+      const searchVal = search.toLowerCase().trim();
+      filteredBatches = batches.filter(b => 
+        b.tenSanPham.toLowerCase().includes(searchVal) || 
+        b.maSKU.toLowerCase().includes(searchVal) || 
+        b.maDonNhap.toLowerCase().includes(searchVal)
+      );
+    }
+
+    res.json({
+      success: true,
+      data: filteredBatches
+    });
+  } catch (error) {
+    res.status(500);
+    throw new Error(`Lỗi khi lấy danh sách lô hàng tồn kho: ${error.message}`);
+  }
+};
+
 module.exports = {
   danhSachSanPham,
   chiTietSanPham,
   taoSanPham,
   capNhatSanPham,
   xoaSanPham,
-  dieuChinhTonKho
+  dieuChinhTonKho,
+  danhSachLoHangTonKho
 };
