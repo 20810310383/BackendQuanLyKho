@@ -6,7 +6,8 @@ const {
   chiTietNhapHang,
   taoDonNhap,
   huyDonNhap,
-  hoanThanhPhieuTam
+  hoanThanhPhieuTam,
+  capNhatNhapHang
 } = require('../controllers/importController');
 
 router.route('/')
@@ -14,7 +15,8 @@ router.route('/')
   .post(protect, taoDonNhap);
 
 router.route('/:id')
-  .get(protect, chiTietNhapHang);
+  .get(protect, chiTietNhapHang)
+  .put(protect, capNhatNhapHang);
 
 router.route('/:id/cancel')
   .put(protect, huyDonNhap);

@@ -199,6 +199,7 @@ const taoDonNhap = async (req, res) => {
       }
 
       const giamGiaItem = Number(item.giamGia) || 0;
+      const giaBanItem = Number(item.giaBan) || 0;
       const itemTotal = (item.donGiaNhap - giamGiaItem) * item.soLuong;
       tongTien += itemTotal;
 
@@ -208,12 +209,16 @@ const taoDonNhap = async (req, res) => {
         tenSanPham: sp.tenSanPham,
         soLuong: item.soLuong,
         donGiaNhap: item.donGiaNhap,
+        giaBan: giaBanItem,
         giamGia: giamGiaItem
       });
 
       // CẬP NHẬT GIÁ NHẬP của sản phẩm nếu ở trạng thái hoàn thành
       if (trangThai === 'hoan_thanh') {
         sp.giaNhap = item.donGiaNhap;
+        if (item.giaBan !== undefined) {
+          sp.giaBan = item.giaBan;
+        }
         await sp.save();
       }
     }
@@ -489,10 +494,198 @@ const hoanThanhPhieuTam = async (req, res) => {
   }
 };
 
+// @desc    Cập nhật đơn nhập hàng
+// @route   PUT /api/imports/:id
+// @access  Private
+const capNhatNhapHang = async (req, res) => {
+  try {
+    const importOrder = await NhapHang.findById(req.params.id);
+    if (!importOrder) {
+      res.status(404);
+      throw new Error('Không tìm thấy đơn nhập hàng');
+    }
+
+    if (importOrder.trangThai === 'da_huy') {
+      res.status(400);
+      throw new Error('Không thể sửa đơn nhập hàng đã bị hủy');
+    }
+
+    const {
+      nhaCungCapId,
+      danhSachSanPham,
+      tienDaThanhToan,
+      ghiChu,
+      giamGiaPhieu,
+      chiPhiNhapNcc,
+      canTraNcc,
+      chiPhiNhapKhac,
+      maDatHangNhap,
+      soHoaDonDauVao,
+      trangThai
+    } = req.body;
+
+    if (!nhaCungCapId) {
+      res.status(400);
+      throw new Error('Vui lòng chọn nhà cung cấp');
+    }
+
+    const ncc = await NhaCungCap.findById(nhaCungCapId);
+    if (!ncc) {
+      res.status(400);
+      throw new Error('Không tìm thấy nhà cung cấp');
+    }
+
+    if (!danhSachSanPham || danhSachSanPham.length === 0) {
+      res.status(400);
+      throw new Error('Đơn nhập phải có ít nhất một sản phẩm');
+    }
+
+    const wasHoanThanh = importOrder.trangThai === 'hoan_thanh';
+    const isHoanThanh = trangThai === 'hoan_thanh';
+
+    // 1. Nếu đơn hàng cũ đã hoàn thành, ta cần hoàn trả lại các tác động cũ
+    if (wasHoanThanh) {
+      // Hoàn trả kho cũ (trừ kho)
+      for (const item of importOrder.danhSachSanPham) {
+        await LichSuKho.create({
+          sanPhamId: item.sanPhamId,
+          maSKU: item.maSKU,
+          soLuongThayDoi: -item.soLuong,
+          loaiThayDoi: 'dieu_chinh_thu_cong',
+          maThamChieu: importOrder._id,
+          nguoiThucHien: req.user._id
+        });
+      }
+
+      // Hoàn trả nợ cũ và tổng mua cũ của nhà cung cấp cũ
+      if (importOrder.nhaCungCapId) {
+        const oldNcc = await NhaCungCap.findById(importOrder.nhaCungCapId);
+        if (oldNcc) {
+          oldNcc.tongMua = Math.max(0, oldNcc.tongMua - importOrder.canTraNcc);
+          const unpaid = importOrder.canTraNcc - importOrder.tienDaThanhToan;
+          oldNcc.noCanTra = Math.max(0, oldNcc.noCanTra - unpaid);
+          await oldNcc.save();
+        }
+      }
+
+      // Xóa giao dịch thu chi cũ
+      await ThuChi.deleteMany({ maThamChieu: importOrder._id });
+    }
+
+    // 2. Tính toán chi phí đơn hàng mới và kiểm tra sản phẩm
+    let newTongTien = 0;
+    const verifiedProducts = [];
+
+    for (const item of danhSachSanPham) {
+      const sp = await SanPham.findById(item.sanPhamId);
+      if (!sp) {
+        res.status(400);
+        throw new Error(`Không tìm thấy sản phẩm ID: ${item.sanPhamId}`);
+      }
+
+      const giamGiaItem = Number(item.giamGia) || 0;
+      const giaBanItem = Number(item.giaBan) || 0;
+      const itemTotal = (item.donGiaNhap - giamGiaItem) * item.soLuong;
+      newTongTien += itemTotal;
+
+      verifiedProducts.push({
+        sanPhamId: sp._id,
+        maSKU: sp.maSKU,
+        tenSanPham: sp.tenSanPham,
+        soLuong: item.soLuong,
+        donGiaNhap: item.donGiaNhap,
+        giaBan: giaBanItem,
+        giamGia: giamGiaItem
+      });
+
+      // Cập nhật giá bán lẻ & giá nhập nếu hoàn thành
+      if (isHoanThanh) {
+        sp.giaNhap = item.donGiaNhap;
+        if (item.giaBan !== undefined) {
+          sp.giaBan = item.giaBan;
+        }
+        await sp.save();
+      }
+    }
+
+    // 3. Cập nhật thông tin phiếu nhập
+    importOrder.nhaCungCapId = nhaCungCapId;
+    importOrder.danhSachSanPham = verifiedProducts;
+    importOrder.tongTien = newTongTien;
+    importOrder.giamGiaPhieu = Number(giamGiaPhieu) || 0;
+    importOrder.chiPhiNhapNcc = Number(chiPhiNhapNcc) || 0;
+    importOrder.canTraNcc = Number(canTraNcc) || 0;
+    importOrder.tienDaThanhToan = Number(tienDaThanhToan) || 0;
+    importOrder.chiPhiNhapKhac = Number(chiPhiNhapKhac) || 0;
+    if (maDatHangNhap) importOrder.maDatHangNhap = maDatHangNhap;
+    if (soHoaDonDauVao) importOrder.soHoaDonDauVao = soHoaDonDauVao;
+    importOrder.trangThai = trangThai || importOrder.trangThai;
+    importOrder.ghiChu = ghiChu || '';
+
+    await importOrder.save();
+
+    // 4. Áp dụng các tác động mới nếu hoàn thành
+    if (isHoanThanh) {
+      // Cộng kho mới
+      for (const item of verifiedProducts) {
+        await LichSuKho.create({
+          sanPhamId: item.sanPhamId,
+          maSKU: item.maSKU,
+          soLuongThayDoi: item.soLuong,
+          loaiThayDoi: 'nhap_hang',
+          maThamChieu: importOrder._id,
+          nguoiThucHien: req.user._id
+        });
+      }
+
+      // Cập nhật nợ mới & tổng mua mới cho nhà cung cấp mới
+      const newNcc = await NhaCungCap.findById(nhaCungCapId);
+      if (newNcc) {
+        newNcc.tongMua += Number(canTraNcc) || 0;
+        newNcc.noCanTra += ((Number(canTraNcc) || 0) - (Number(tienDaThanhToan) || 0));
+        await newNcc.save();
+      }
+
+      // Tạo phiếu chi mới
+      const actualTienChi = Number(tienDaThanhToan) || 0;
+      if (actualTienChi > 0) {
+        const maGiaoDich = await generateMaGiaoDich('chi');
+        await ThuChi.create({
+          maGiaoDich,
+          loaiGiaoDich: 'chi',
+          danhMuc: 'nhap_hang',
+          soTien: actualTienChi,
+          maThamChieu: importOrder._id,
+          moTa: `Chi tiền nhập hàng đơn ${importOrder.maDonNhap}`,
+          nguoiThucHien: req.user._id
+        });
+      }
+    }
+
+    // Phát tín hiệu real-time
+    if (req.io) {
+      req.io.emit('import:change', { action: 'update', data: importOrder });
+      req.io.emit('product:change', { action: 'update_cogs' });
+      req.io.emit('stock:change', { action: 'import', source: 'import', importId: importOrder._id });
+      req.io.emit('cashflow:change', { action: 'update', source: 'import' });
+    }
+
+    res.json({
+      success: true,
+      message: 'Cập nhật đơn nhập hàng thành công',
+      data: importOrder
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500);
+    throw new Error(error.message || 'Lỗi khi cập nhật đơn nhập hàng');
+  }
+};
+
 module.exports = {
   danhSachNhapHang,
   chiTietNhapHang,
   taoDonNhap,
   huyDonNhap,
-  hoanThanhPhieuTam
+  hoanThanhPhieuTam,
+  capNhatNhapHang
 };

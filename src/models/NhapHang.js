@@ -37,6 +37,10 @@ const nhapHangSchema = new mongoose.Schema({
       required: true,
       min: 0
     },
+    giaBan: {
+      type: Number,
+      default: 0
+    },
     giamGia: {
       type: Number,
       default: 0
