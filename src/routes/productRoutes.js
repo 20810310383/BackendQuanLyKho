@@ -7,7 +7,8 @@ const {
   chiTietSanPham,
   taoSanPham,
   capNhatSanPham,
-  xoaSanPham
+  xoaSanPham,
+  dieuChinhTonKho
 } = require('../controllers/productController');
 const { importExcelProducts } = require('../controllers/importExcelController');
 
@@ -41,6 +42,8 @@ router.route('/:id')
   .get(protect, chiTietSanPham)
   .put(protect, isAdmin, capNhatSanPham)
   .delete(protect, isAdmin, xoaSanPham);
+
+router.post('/:id/adjust-stock', protect, isAdmin, dieuChinhTonKho);
 
 module.exports = router;
 

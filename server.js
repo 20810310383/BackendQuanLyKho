@@ -93,6 +93,8 @@ app.use('/api/orders', require('./src/routes/orderRoutes'));
 app.use('/api/imports', require('./src/routes/importRoutes'));
 app.use('/api/cashflows', require('./src/routes/cashFlowRoutes'));
 app.use('/api/reports', require('./src/routes/reportRoutes'));
+app.use('/api/customers', require('./src/routes/customerRoutes'));
+app.use('/api/suppliers', require('./src/routes/supplierRoutes'));
 app.use('/api/users', require('./src/routes/userRoutes'));
 
 

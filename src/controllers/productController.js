@@ -25,6 +25,12 @@ const danhSachSanPham = async (req, res) => {
       query.trangThai = req.query.trangThai === 'true';
     }
 
+    // Bộ lọc chỉ lấy sản phẩm đã có lịch sử kho (đã được nhập kho/điều chỉnh)
+    if (req.query.inWarehouse === 'true') {
+      const distinctIds = await LichSuKho.distinct('sanPhamId');
+      query._id = { $in: distinctIds };
+    }
+
     // Bộ lọc khoảng giá bán
     if (req.query.giaMin !== undefined || req.query.giaMax !== undefined) {
       const gMin = Number(req.query.giaMin);
@@ -278,10 +284,91 @@ const xoaSanPham = async (req, res) => {
   }
 };
 
+// @desc    Điều chỉnh tồn kho thủ công (nhập hàng vào kho trực tiếp)
+// @route   POST /api/products/:id/adjust-stock
+// @access  Private/Admin
+const dieuChinhTonKho = async (req, res) => {
+  try {
+    const { soLuong, kieu } = req.body; // kieu: 'set' hoặc 'add' (mặc định là 'add')
+    const sanPham = await SanPham.findById(req.params.id);
+
+    if (!sanPham) {
+      res.status(404);
+      throw new Error('Không tìm thấy sản phẩm');
+    }
+
+    let change = Number(soLuong);
+    if (isNaN(change)) {
+      res.status(400);
+      throw new Error('Số lượng không hợp lệ');
+    }
+
+    const mode = kieu || 'add';
+
+    if (mode === 'set') {
+      const stockResult = await LichSuKho.aggregate([
+        { $match: { sanPhamId: sanPham._id } },
+        { $group: { _id: "$sanPhamId", tonKho: { $sum: "$soLuongThayDoi" } } }
+      ]);
+      const currentStock = stockResult.length > 0 ? stockResult[0].tonKho : 0;
+      change = change - currentStock;
+    }
+
+    if (change === 0) {
+      const stockResult = await LichSuKho.aggregate([
+        { $match: { sanPhamId: sanPham._id } },
+        { $group: { _id: "$sanPhamId", tonKho: { $sum: "$soLuongThayDoi" } } }
+      ]);
+      const currentStock = stockResult.length > 0 ? stockResult[0].tonKho : 0;
+      return res.json({
+        success: true,
+        message: 'Tồn kho không thay đổi',
+        data: {
+          productId: sanPham._id,
+          tonKho: currentStock
+        }
+      });
+    }
+
+    await LichSuKho.create({
+      sanPhamId: sanPham._id,
+      maSKU: sanPham.maSKU,
+      soLuongThayDoi: change,
+      loaiThayDoi: 'dieu_chinh_thu_cong',
+      nguoiThucHien: req.user._id
+    });
+
+    const stockResult = await LichSuKho.aggregate([
+      { $match: { sanPhamId: sanPham._id } },
+      { $group: { _id: "$sanPhamId", tonKho: { $sum: "$soLuongThayDoi" } } }
+    ]);
+    const newStock = stockResult.length > 0 ? stockResult[0].tonKho : 0;
+
+    if (req.io) {
+      req.io.emit('stock:change', { action: 'dieu_chinh_thu_cong', productId: sanPham._id, newStock });
+      req.io.emit('product:change', { action: 'update', data: { ...sanPham.toObject(), tonKho: newStock } });
+    }
+
+    res.json({
+      success: true,
+      message: 'Điều chỉnh tồn kho thành công',
+      data: {
+        productId: sanPham._id,
+        tonKho: newStock,
+        change
+      }
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500);
+    throw new Error(error.message || 'Lỗi khi điều chỉnh tồn kho');
+  }
+};
+
 module.exports = {
   danhSachSanPham,
   chiTietSanPham,
   taoSanPham,
   capNhatSanPham,
-  xoaSanPham
+  xoaSanPham,
+  dieuChinhTonKho
 };

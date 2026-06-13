@@ -6,10 +6,10 @@ const nhapHangSchema = new mongoose.Schema({
     required: true,
     unique: true
   },
-  nhaCungCap: {
-    type: String,
-    required: true,
-    trim: true
+  nhaCungCapId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'NhaCungCap',
+    default: null
   },
   danhSachSanPham: [{
     sanPhamId: {
@@ -36,9 +36,27 @@ const nhapHangSchema = new mongoose.Schema({
       type: Number,
       required: true,
       min: 0
+    },
+    giamGia: {
+      type: Number,
+      default: 0
     }
   }],
   tongTien: {
+    type: Number,
+    required: true,
+    min: 0,
+    default: 0
+  },
+  giamGiaPhieu: {
+    type: Number,
+    default: 0
+  },
+  chiPhiNhapNcc: {
+    type: Number,
+    default: 0
+  },
+  canTraNcc: {
     type: Number,
     required: true,
     min: 0,
@@ -50,9 +68,21 @@ const nhapHangSchema = new mongoose.Schema({
     min: 0,
     default: 0
   },
+  chiPhiNhapKhac: {
+    type: Number,
+    default: 0
+  },
+  maDatHangNhap: {
+    type: String,
+    default: ''
+  },
+  soHoaDonDauVao: {
+    type: String,
+    default: ''
+  },
   trangThai: {
     type: String,
-    enum: ['hoan_thanh', 'da_huy'],
+    enum: ['hoan_thanh', 'phieu_tam', 'da_huy'],
     default: 'hoan_thanh'
   },
   nguoiNhap: {

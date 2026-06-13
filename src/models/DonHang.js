@@ -31,6 +31,11 @@ const donHangSchema = new mongoose.Schema({
     enum: ['truc_tiep', 'dat_hang'],
     default: 'truc_tiep'
   },
+  khachHangId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'KhachHang',
+    default: null
+  },
   danhSachSanPham: [{
     sanPhamId: {
       type: mongoose.Schema.Types.ObjectId,

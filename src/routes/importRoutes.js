@@ -5,7 +5,8 @@ const {
   danhSachNhapHang,
   chiTietNhapHang,
   taoDonNhap,
-  huyDonNhap
+  huyDonNhap,
+  hoanThanhPhieuTam
 } = require('../controllers/importController');
 
 router.route('/')
@@ -17,5 +18,8 @@ router.route('/:id')
 
 router.route('/:id/cancel')
   .put(protect, huyDonNhap);
+
+router.route('/:id/complete')
+  .put(protect, hoanThanhPhieuTam);
 
 module.exports = router;
