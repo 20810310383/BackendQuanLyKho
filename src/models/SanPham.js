@@ -25,6 +25,12 @@ const sanPhamSchema = new mongoose.Schema({
     min: 0,
     default: 0
   },
+  giaSi: {
+    type: Number,
+    required: true,
+    min: 0,
+    default: 0
+  },
   donViTinh: {
     type: String,
     required: true,

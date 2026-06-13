@@ -137,7 +137,7 @@ const chiTietSanPham = async (req, res) => {
 // @access  Private/Admin
 const taoSanPham = async (req, res) => {
   try {
-    const { tenSanPham, giaNhap, giaBan, donViTinh, anhSanPham, moTa, trangThai } = req.body;
+    const { tenSanPham, giaNhap, giaSi, giaBan, donViTinh, anhSanPham, moTa, trangThai } = req.body;
 
     if (!tenSanPham) {
       res.status(400);
@@ -159,6 +159,7 @@ const taoSanPham = async (req, res) => {
       maSKU: generatedSKU,
       tenSanPham,
       giaNhap: Number(giaNhap) || 0,
+      giaSi: Number(giaSi) || 0,
       giaBan: Number(giaBan) || 0,
       donViTinh: donViTinh || 'Cái',
       anhSanPham: anhSanPham || '',
@@ -190,7 +191,7 @@ const taoSanPham = async (req, res) => {
 // @access  Private/Admin
 const capNhatSanPham = async (req, res) => {
   try {
-    const { maSKU, tenSanPham, giaNhap, giaBan, donViTinh, anhSanPham, moTa, trangThai } = req.body;
+    const { maSKU, tenSanPham, giaNhap, giaSi, giaBan, donViTinh, anhSanPham, moTa, trangThai } = req.body;
 
     const sanPham = await SanPham.findById(req.params.id);
 
@@ -211,6 +212,7 @@ const capNhatSanPham = async (req, res) => {
 
     if (tenSanPham !== undefined) sanPham.tenSanPham = tenSanPham;
     if (giaNhap !== undefined) sanPham.giaNhap = Number(giaNhap);
+    if (giaSi !== undefined) sanPham.giaSi = Number(giaSi);
     if (giaBan !== undefined) sanPham.giaBan = Number(giaBan);
     if (donViTinh !== undefined) sanPham.donViTinh = donViTinh;
     if (anhSanPham !== undefined) sanPham.anhSanPham = anhSanPham;
@@ -409,6 +411,7 @@ const danhSachLoHangTonKho = async (req, res) => {
             anhSanPham: item.sanPhamId.anhSanPham || '',
             donViTinh: item.sanPhamId.donViTinh || 'Cái',
             donGiaNhap: item.donGiaNhap,
+            giaSi: item.giaSi || item.sanPhamId.giaSi || 0,
             giaBan: item.giaBan || item.sanPhamId.giaBan || 0,
             tonKho: Math.max(0, tonKho),
             createdAt: imp.createdAt

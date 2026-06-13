@@ -99,6 +99,11 @@ const donHangSchema = new mongoose.Schema({
     min: 0,
     default: 0
   },
+  loaiGia: {
+    type: String,
+    enum: ['le', 'si'],
+    default: 'le'
+  },
   trangThai: {
     type: String,
     enum: ['cho_xuly', 'dang_giao', 'hoan_thanh', 'da_tra', 'con_no'],

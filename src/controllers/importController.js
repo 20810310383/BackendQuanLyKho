@@ -7,11 +7,8 @@ const NhaCungCap = require('../models/NhaCungCap');
 // Helper sinh mã đơn nhập tự động: NH-YYYYMMDD-XXXX
 const generateMaDonNhap = async () => {
   const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-  const startOfDay = new Date();
-  startOfDay.setHours(0, 0, 0, 0);
-
   const count = await NhapHang.countDocuments({
-    createdAt: { $gte: startOfDay }
+    maDonNhap: { $regex: new RegExp(`^NH-${dateStr}-`) }
   });
   return `NH-${dateStr}-${String(count + 1).padStart(4, '0')}`;
 };
@@ -19,12 +16,8 @@ const generateMaDonNhap = async () => {
 // Helper sinh mã đặt hàng nhập tự động: ĐHN-YYYYMMDD-XXXX
 const generateMaDatHangNhap = async () => {
   const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-  const startOfDay = new Date();
-  startOfDay.setHours(0, 0, 0, 0);
-
   const count = await NhapHang.countDocuments({
-    createdAt: { $gte: startOfDay },
-    maDatHangNhap: { $regex: /^ĐHN-/ }
+    maDatHangNhap: { $regex: new RegExp(`^ĐHN-${dateStr}-`) }
   });
   return `ĐHN-${dateStr}-${String(count + 1).padStart(4, '0')}`;
 };
@@ -32,12 +25,8 @@ const generateMaDatHangNhap = async () => {
 // Helper sinh số hóa đơn đầu vào tự động: HĐ-YYYYMMDD-XXXX
 const generateSoHoaDonDauVao = async () => {
   const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-  const startOfDay = new Date();
-  startOfDay.setHours(0, 0, 0, 0);
-
   const count = await NhapHang.countDocuments({
-    createdAt: { $gte: startOfDay },
-    soHoaDonDauVao: { $regex: /^HĐ-/ }
+    soHoaDonDauVao: { $regex: new RegExp(`^HĐ-${dateStr}-`) }
   });
   return `HĐ-${dateStr}-${String(count + 1).padStart(4, '0')}`;
 };
@@ -200,6 +189,7 @@ const taoDonNhap = async (req, res) => {
 
       const giamGiaItem = Number(item.giamGia) || 0;
       const giaBanItem = Number(item.giaBan) || sp.giaBan || 0;
+      const giaSiItem = Number(item.giaSi) || sp.giaSi || 0;
       const itemTotal = (item.donGiaNhap - giamGiaItem) * item.soLuong;
       tongTien += itemTotal;
 
@@ -210,6 +200,7 @@ const taoDonNhap = async (req, res) => {
         soLuong: item.soLuong,
         donGiaNhap: item.donGiaNhap,
         giaBan: giaBanItem,
+        giaSi: giaSiItem,
         giamGia: giamGiaItem
       });
 
@@ -218,6 +209,9 @@ const taoDonNhap = async (req, res) => {
         sp.giaNhap = item.donGiaNhap;
         if (item.giaBan !== undefined) {
           sp.giaBan = item.giaBan;
+        }
+        if (item.giaSi !== undefined) {
+          sp.giaSi = item.giaSi;
         }
         await sp.save();
       }
@@ -450,6 +444,12 @@ const hoanThanhPhieuTam = async (req, res) => {
       const sp = await SanPham.findById(item.sanPhamId);
       if (sp) {
         sp.giaNhap = item.donGiaNhap;
+        if (item.giaBan !== undefined) {
+          sp.giaBan = item.giaBan;
+        }
+        if (item.giaSi !== undefined) {
+          sp.giaSi = item.giaSi;
+        }
         await sp.save();
       }
 
@@ -589,6 +589,7 @@ const capNhatNhapHang = async (req, res) => {
 
       const giamGiaItem = Number(item.giamGia) || 0;
       const giaBanItem = Number(item.giaBan) || sp.giaBan || 0;
+      const giaSiItem = Number(item.giaSi) || sp.giaSi || 0;
       const itemTotal = (item.donGiaNhap - giamGiaItem) * item.soLuong;
       newTongTien += itemTotal;
 
@@ -599,14 +600,18 @@ const capNhatNhapHang = async (req, res) => {
         soLuong: item.soLuong,
         donGiaNhap: item.donGiaNhap,
         giaBan: giaBanItem,
+        giaSi: giaSiItem,
         giamGia: giamGiaItem
       });
 
-      // Cập nhật giá bán lẻ & giá nhập nếu hoàn thành
+      // Cập nhật giá bán lẻ & giá nhập & giá sỉ nếu hoàn thành
       if (isHoanThanh) {
         sp.giaNhap = item.donGiaNhap;
         if (item.giaBan !== undefined) {
           sp.giaBan = item.giaBan;
+        }
+        if (item.giaSi !== undefined) {
+          sp.giaSi = item.giaSi;
         }
         await sp.save();
       }
@@ -739,6 +744,59 @@ const capNhatGiaBanLeTrongPhieu = async (req, res) => {
   }
 };
 
+const capNhatGiaSiTrongPhieu = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { productId, giaSi } = req.body;
+
+    if (!productId || giaSi === undefined) {
+      res.status(400);
+      throw new Error('Vui lòng cung cấp productId và giaSi');
+    }
+
+    const importOrder = await NhapHang.findById(id);
+    if (!importOrder) {
+      res.status(404);
+      throw new Error('Không tìm thấy đơn nhập hàng');
+    }
+
+    if (importOrder.trangThai === 'da_huy') {
+      res.status(400);
+      throw new Error('Không thể cập nhật đơn nhập hàng đã bị hủy');
+    }
+
+    // Cập nhật giaSi trong danh sách sản phẩm của đơn nhập hàng
+    let found = false;
+    for (const item of importOrder.danhSachSanPham) {
+      if (item.sanPhamId.toString() === productId.toString()) {
+        item.giaSi = Number(giaSi);
+        found = true;
+      }
+    }
+
+    if (!found) {
+      res.status(400);
+      throw new Error('Sản phẩm không tồn tại trong đơn nhập này');
+    }
+
+    await importOrder.save();
+
+    // Phát tín hiệu real-time
+    if (req.io) {
+      req.io.emit('import:change', { action: 'update_wholesale_price', data: importOrder });
+    }
+
+    res.json({
+      success: true,
+      message: 'Cập nhật giá sỉ trong đơn nhập hàng thành công',
+      data: importOrder
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500);
+    throw new Error(error.message || 'Lỗi khi cập nhật giá sỉ trong đơn nhập hàng');
+  }
+};
+
 module.exports = {
   danhSachNhapHang,
   chiTietNhapHang,
@@ -746,6 +804,7 @@ module.exports = {
   huyDonNhap,
   hoanThanhPhieuTam,
   capNhatNhapHang,
-  capNhatGiaBanLeTrongPhieu
+  capNhatGiaBanLeTrongPhieu,
+  capNhatGiaSiTrongPhieu
 };
 

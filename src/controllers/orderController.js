@@ -9,11 +9,8 @@ const NhapHang = require('../models/NhapHang');
 // Helper sinh mã đơn hàng tự động: HD-YYYYMMDD-XXXX
 const generateMaDonHang = async () => {
   const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-  const startOfDay = new Date();
-  startOfDay.setHours(0, 0, 0, 0);
-
   const count = await DonHang.countDocuments({
-    createdAt: { $gte: startOfDay }
+    maDonHang: { $regex: new RegExp(`^HD-${dateStr}-`) }
   });
   return `HD-${dateStr}-${String(count + 1).padStart(4, '0')}`;
 };
@@ -164,7 +161,8 @@ const taoDonHang = async (req, res) => {
       tienDatCoc,
       tienDaThanhToan,
       ghiChu,
-      trangThai
+      trangThai,
+      loaiGia
     } = req.body;
 
     if (!danhSachSanPham || danhSachSanPham.length === 0) {
@@ -198,9 +196,14 @@ const taoDonHang = async (req, res) => {
         throw new Error(`Không tìm thấy lô hàng nhập kho ID: ${item.nhapHangId}`);
       }
 
-      // Lấy giá bán lẻ của sản phẩm trong lô hàng này
+      // Lấy giá bán lẻ/sỉ của sản phẩm trong lô hàng này
       const impProduct = impSlip.danhSachSanPham.find(p => p.sanPhamId.toString() === sp._id.toString());
-      const batchGiaBan = impProduct ? (impProduct.giaBan || sp.giaBan || 0) : (sp.giaBan || 0);
+      let batchGia = 0;
+      if (loaiGia === 'si') {
+        batchGia = impProduct ? (impProduct.giaSi || sp.giaSi || 0) : (sp.giaSi || 0);
+      } else {
+        batchGia = impProduct ? (impProduct.giaBan || sp.giaBan || 0) : (sp.giaBan || 0);
+      }
 
       // Kiểm tra tồn kho động của lô hàng cụ thể nếu đơn hàng sẽ trừ kho ngay
       if (isDeductStock) {
@@ -219,7 +222,7 @@ const taoDonHang = async (req, res) => {
         }
       }
 
-      const itemTotal = batchGiaBan * item.soLuong;
+      const itemTotal = batchGia * item.soLuong;
       tongTien += itemTotal;
 
       verifiedProducts.push({
@@ -227,7 +230,7 @@ const taoDonHang = async (req, res) => {
         maSKU: sp.maSKU,
         tenSanPham: sp.tenSanPham,
         soLuong: item.soLuong,
-        donGia: batchGiaBan, // Lưu giá bán tại thời điểm này theo lô hàng
+        donGia: batchGia, // Lưu giá bán tại thời điểm này theo lô hàng
         anhSanPham: sp.anhSanPham || '',
         nhapHangId: item.nhapHangId
       });
@@ -313,7 +316,8 @@ const taoDonHang = async (req, res) => {
       tienConNo,
       trangThai: status,
       nguoiBan: req.user._id,
-      ghiChu: ghiChu || ''
+      ghiChu: ghiChu || '',
+      loaiGia: loaiGia || 'le'
     });
 
     // 3. Nếu đơn hàng hoàn thành, đang giao hoặc còn nợ -> Trừ kho và tạo Dòng tiền thu

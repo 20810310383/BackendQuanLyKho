@@ -139,6 +139,7 @@ const HEADER_MAP = {
   maSKU:       ['mã sku', 'ma sku', 'sku', 'mã hàng', 'ma hang', 'code'],
   giaNhap:     ['giá nhập', 'gia nhap', 'giá vốn', 'gia von', 'cost', 'nhập', 'nhap', 'giá mua', 'gia mua'],
   giaBan:      ['giá bán', 'gia ban', 'bán', 'ban', 'price', 'giá lẻ', 'gia le', 'bán lẻ', 'ban le'],
+  giaSi:       ['giá sỉ', 'gia si', 'sỉ', 'si', 'wholesale', 'wholesale price'],
   donViTinh:   ['đvt', 'dvt', 'đơn vị tính', 'don vi tinh', 'đơn vị', 'don vi', 'unit'],
   moTa:        ['mô tả', 'mo ta', 'description', 'ghi chú', 'ghi chu', 'chi tiết', 'chi tiet', 'notes'],
   anhSanPham:  ['ảnh', 'anh', 'ảnh sản phẩm', 'anh san pham', 'image', 'url ảnh', 'url anh', 'image url', 'link ảnh', 'link anh'],
@@ -238,12 +239,14 @@ const importExcelProducts = async (req, res) => {
 
     let maSKU = ('maSKU' in colMap ? (row[colMap.maSKU] ?? '') : '').toString().trim().toUpperCase();
     const giaNhapRaw = 'giaNhap' in colMap ? row[colMap.giaNhap] : '';
+    const giaSiRaw   = 'giaSi'   in colMap ? row[colMap.giaSi]   : '';
     const giaBanRaw  = 'giaBan'  in colMap ? row[colMap.giaBan]  : '';
     const donViTinh  = ('donViTinh' in colMap ? (row[colMap.donViTinh] ?? '') : '').toString().trim() || 'Cái';
     const moTa       = ('moTa' in colMap ? (row[colMap.moTa] ?? '') : '').toString().trim();
     const imageRaw   = ('anhSanPham' in colMap ? (row[colMap.anhSanPham] ?? '') : '').toString().trim();
 
     const giaNhap = parsePriceString(giaNhapRaw);
+    const giaSi   = parsePriceString(giaSiRaw);
     const giaBan  = parsePriceString(giaBanRaw);
 
     // Handle SKU
@@ -274,6 +277,7 @@ const importExcelProducts = async (req, res) => {
         maSKU,
         tenSanPham,
         giaNhap,
+        giaSi,
         giaBan,
         donViTinh,
         anhSanPham,
@@ -290,6 +294,7 @@ const importExcelProducts = async (req, res) => {
         maSKU: newProduct.maSKU,
         tenSanPham: newProduct.tenSanPham,
         giaNhap: newProduct.giaNhap,
+        giaSi: newProduct.giaSi,
         giaBan: newProduct.giaBan,
         donViTinh: newProduct.donViTinh,
         anhSanPham: newProduct.anhSanPham,

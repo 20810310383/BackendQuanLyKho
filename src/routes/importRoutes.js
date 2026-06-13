@@ -8,7 +8,8 @@ const {
   huyDonNhap,
   hoanThanhPhieuTam,
   capNhatNhapHang,
-  capNhatGiaBanLeTrongPhieu
+  capNhatGiaBanLeTrongPhieu,
+  capNhatGiaSiTrongPhieu
 } = require('../controllers/importController');
 
 router.route('/')
@@ -21,6 +22,9 @@ router.route('/:id')
 
 router.route('/:id/update-retail-price')
   .put(protect, capNhatGiaBanLeTrongPhieu);
+
+router.route('/:id/update-wholesale-price')
+  .put(protect, capNhatGiaSiTrongPhieu);
 
 router.route('/:id/cancel')
   .put(protect, huyDonNhap);
