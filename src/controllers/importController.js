@@ -681,11 +681,66 @@ const capNhatNhapHang = async (req, res) => {
   }
 };
 
+const capNhatGiaBanLeTrongPhieu = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { productId, giaBan } = req.body;
+
+    if (!productId || giaBan === undefined) {
+      res.status(400);
+      throw new Error('Vui lòng cung cấp productId và giaBan');
+    }
+
+    const importOrder = await NhapHang.findById(id);
+    if (!importOrder) {
+      res.status(404);
+      throw new Error('Không tìm thấy đơn nhập hàng');
+    }
+
+    if (importOrder.trangThai === 'da_huy') {
+      res.status(400);
+      throw new Error('Không thể cập nhật đơn nhập hàng đã bị hủy');
+    }
+
+    // Cập nhật giaBan trong danh sách sản phẩm của đơn nhập hàng
+    let found = false;
+    for (const item of importOrder.danhSachSanPham) {
+      if (item.sanPhamId.toString() === productId.toString()) {
+        item.giaBan = Number(giaBan);
+        found = true;
+      }
+    }
+
+    if (!found) {
+      res.status(400);
+      throw new Error('Sản phẩm không tồn tại trong đơn nhập này');
+    }
+
+    await importOrder.save();
+
+    // Phát tín hiệu real-time
+    if (req.io) {
+      req.io.emit('import:change', { action: 'update_retail_price', data: importOrder });
+    }
+
+    res.json({
+      success: true,
+      message: 'Cập nhật giá bán lẻ trong đơn nhập hàng thành công',
+      data: importOrder
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500);
+    throw new Error(error.message || 'Lỗi khi cập nhật giá bán lẻ trong đơn nhập hàng');
+  }
+};
+
 module.exports = {
   danhSachNhapHang,
   chiTietNhapHang,
   taoDonNhap,
   huyDonNhap,
   hoanThanhPhieuTam,
-  capNhatNhapHang
+  capNhatNhapHang,
+  capNhatGiaBanLeTrongPhieu
 };
+
