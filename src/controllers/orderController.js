@@ -335,14 +335,14 @@ const taoDonHang = async (req, res) => {
         });
       }
 
-      // Tạo Phiếu Thu dòng tiền loại 'ban_hang'
+      // Tạo Phiếu Thu dòng tiền loại 'ban_le' hoặc 'ban_si'
       const tongThanhToan = (order.tienDaThanhToan || 0) + (order.tienDatCoc || 0);
       if (tongThanhToan > 0) {
         const maGiaoDich = await generateMaGiaoDich('thu');
         await ThuChi.create({
           maGiaoDich,
           loaiGiaoDich: 'thu',
-          danhMuc: 'ban_hang',
+          danhMuc: order.loaiGia === 'si' ? 'ban_si' : 'ban_le',
           soTien: tongThanhToan,
           maThamChieu: order._id,
           moTa: `Thu tiền đơn hàng ${order.maDonHang}`,
@@ -356,7 +356,7 @@ const taoDonHang = async (req, res) => {
         await ThuChi.create({
           maGiaoDich,
           loaiGiaoDich: 'thu',
-          danhMuc: 'ban_hang',
+          danhMuc: order.loaiGia === 'si' ? 'ban_si' : 'ban_le',
           soTien: order.tienDatCoc,
           maThamChieu: order._id,
           moTa: `Thu cọc đơn đặt hàng ${order.maDonHang}`,
@@ -662,7 +662,7 @@ const capNhatDonHang = async (req, res) => {
         await ThuChi.create({
           maGiaoDich,
           loaiGiaoDich: 'thu',
-          danhMuc: 'ban_hang',
+          danhMuc: order.loaiGia === 'si' ? 'ban_si' : 'ban_le',
           soTien: difference,
           maThamChieu: order._id,
           moTa: `Thu thêm tiền cho đơn hàng ${order.maDonHang}`,

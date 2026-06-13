@@ -179,7 +179,7 @@ const xoaThuChi = async (req, res) => {
     }
 
     // Bảo vệ các giao dịch tự động: không cho xóa nếu có maThamChieu (được tạo tự động từ bán/nhập hàng)
-    if (cashflow.maThamChieu || cashflow.danhMuc === 'ban_hang' || cashflow.danhMuc === 'nhap_hang') {
+    if (cashflow.maThamChieu || ['ban_hang', 'ban_le', 'ban_si', 'nhap_hang'].includes(cashflow.danhMuc)) {
       res.status(400);
       throw new Error(
         'Không thể xóa phiếu thu/chi tự động. Để điều chỉnh dòng tiền này, bạn vui lòng hủy đơn nhập hoặc trả hàng trên đơn bán tương ứng.'

@@ -76,6 +76,7 @@ const baoCaoXuatNhapTon = async (req, res) => {
         _id: p._id,
         maSKU: p.maSKU,
         tenSanPham: p.tenSanPham,
+        anhSanPham: p.anhSanPham,
         donViTinh: p.donViTinh,
         giaNhap: p.giaNhap,
         giaBan: p.giaBan,
@@ -83,7 +84,7 @@ const baoCaoXuatNhapTon = async (req, res) => {
         nhapTrongKy,
         xuatTrongKy,
         tonCuoiKy,
-        giaTriTonCuoi: tonCuoiKy * p.giaNhap // Tính giá trị tồn cuối theo giá nhập gốc
+        giaTriTonCuoi: tonCuoiKy * p.giaNhap
       };
     });
 

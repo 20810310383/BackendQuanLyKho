@@ -14,7 +14,9 @@ const thuChiSchema = new mongoose.Schema({
   danhMuc: {
     type: String,
     enum: [
-      'ban_hang',      // Tự động thu từ đơn bán hàng
+      'ban_hang',      // Tự động thu từ đơn bán hàng (Legacy)
+      'ban_le',        // Bán lẻ (Hệ thống)
+      'ban_si',        // Bán sỉ (Hệ thống)
       'nhap_hang',     // Tự động chi cho đơn nhập hàng
       'thu_no',        // Thu nợ khách hàng (thủ công)
       'thu_khac',      // Thu khác (thủ công)
