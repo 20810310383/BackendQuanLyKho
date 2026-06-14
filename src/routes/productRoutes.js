@@ -9,7 +9,8 @@ const {
   capNhatSanPham,
   xoaSanPham,
   dieuChinhTonKho,
-  danhSachLoHangTonKho
+  danhSachLoHangTonKho,
+  lichSuMuaBanSanPham
 } = require('../controllers/productController');
 const { importExcelProducts } = require('../controllers/importExcelController');
 
@@ -47,6 +48,8 @@ router.route('/:id')
   .delete(protect, isAdmin, xoaSanPham);
 
 router.post('/:id/adjust-stock', protect, isAdmin, dieuChinhTonKho);
+
+router.get('/:id/history', protect, lichSuMuaBanSanPham);
 
 module.exports = router;
 

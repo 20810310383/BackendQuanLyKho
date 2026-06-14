@@ -75,6 +75,11 @@ const danhSachNhapHang = async (req, res) => {
       query.trangThai = req.query.trangThai;
     }
 
+    // Bộ lọc nhà cung cấp
+    if (req.query.nhaCungCapId) {
+      query.nhaCungCapId = req.query.nhaCungCapId;
+    }
+
     // Bộ lọc khoảng thời gian
     if (req.query.tuNgay || req.query.denNgay) {
       query.createdAt = {};

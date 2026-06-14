@@ -1,6 +1,7 @@
 const SanPham = require('../models/SanPham');
 const LichSuKho = require('../models/LichSuKho');
 const NhapHang = require('../models/NhapHang');
+const DonHang = require('../models/DonHang');
 
 // @desc    Lấy danh sách sản phẩm (có phân trang, bộ lọc, tìm kiếm, tính tồn kho động)
 // @route   GET /api/products
@@ -76,9 +77,28 @@ const danhSachSanPham = async (req, res) => {
       stockMap[item._id.toString()] = item.tonKho;
     });
 
+    // Tính toán số lượng khách đặt (trangThai = 'hoan_thanh') cho các sản phẩm trong trang hiện tại
+    const pendingOrders = await DonHang.aggregate([
+      { $match: { trangThai: 'hoan_thanh' } },
+      { $unwind: "$danhSachSanPham" },
+      { $match: { "danhSachSanPham.sanPhamId": { $in: sanPhamIds } } },
+      {
+        $group: {
+          _id: "$danhSachSanPham.sanPhamId",
+          khachDat: { $sum: "$danhSachSanPham.soLuong" }
+        }
+      }
+    ]);
+
+    const khachDatMap = {};
+    pendingOrders.forEach(item => {
+      khachDatMap[item._id.toString()] = item.khachDat;
+    });
+
     const sanPhamsWithStock = sanPhams.map(p => ({
       ...p,
-      tonKho: stockMap[p._id.toString()] || 0
+      tonKho: stockMap[p._id.toString()] || 0,
+      khachDat: khachDatMap[p._id.toString()] || 0
     }));
 
     res.json({
@@ -424,9 +444,9 @@ const danhSachLoHangTonKho = async (req, res) => {
     let filteredBatches = batches;
     if (search) {
       const searchVal = search.toLowerCase().trim();
-      filteredBatches = batches.filter(b => 
-        b.tenSanPham.toLowerCase().includes(searchVal) || 
-        b.maSKU.toLowerCase().includes(searchVal) || 
+      filteredBatches = batches.filter(b =>
+        b.tenSanPham.toLowerCase().includes(searchVal) ||
+        b.maSKU.toLowerCase().includes(searchVal) ||
         b.maDonNhap.toLowerCase().includes(searchVal)
       );
     }
@@ -435,9 +455,55 @@ const danhSachLoHangTonKho = async (req, res) => {
       success: true,
       data: filteredBatches
     });
+  } catch (err) {
+    console.log(err)
+  }
+}
+// @desc    Lấy lịch sử giao dịch mua bán của sản phẩm
+// @route   GET /api/products/:id/history
+// @access  Private
+const lichSuMuaBanSanPham = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Tìm các bản ghi lịch sử kho của sản phẩm
+    const history = await LichSuKho.find({ sanPhamId: id })
+      .populate('nguoiThucHien', 'hoTen tenDangNhap')
+      .populate('nhapHangId', 'maDonNhap')
+      .sort({ createdAt: -1 })
+      .lean();
+
+    // Map thêm mã tham chiếu (Mã đơn hàng hoặc mã đơn nhập)
+    const result = [];
+    for (const item of history) {
+      let maThamChieuCode = '—';
+
+      if (item.loaiThayDoi === 'nhap_hang' && item.maThamChieu) {
+        const doc = await NhapHang.findById(item.maThamChieu).select('maDonNhap').lean();
+        if (doc) maThamChieuCode = doc.maDonNhap;
+      } else if ((item.loaiThayDoi === 'ban_hang' || item.loaiThayDoi === 'tra_hang') && item.maThamChieu) {
+        const doc = await DonHang.findById(item.maThamChieu).select('maDonHang').lean();
+        if (doc) maThamChieuCode = doc.maDonHang;
+      }
+
+      result.push({
+        _id: item._id,
+        soLuongThayDoi: item.soLuongThayDoi,
+        loaiThayDoi: item.loaiThayDoi,
+        maThamChieu: item.maThamChieu,
+        maThamChieuCode,
+        nguoiThucHien: item.nguoiThucHien?.hoTen || item.nguoiThucHien?.tenDangNhap || 'Hệ thống',
+        createdAt: item.createdAt
+      });
+    }
+
+    res.json({
+      success: true,
+      data: result
+    });
   } catch (error) {
     res.status(500);
-    throw new Error(`Lỗi khi lấy danh sách lô hàng tồn kho: ${error.message}`);
+    throw new Error(`Lỗi khi lấy lịch sử giao dịch sản phẩm: ${error.message}`);
   }
 };
 
@@ -448,5 +514,6 @@ module.exports = {
   capNhatSanPham,
   xoaSanPham,
   dieuChinhTonKho,
-  danhSachLoHangTonKho
-};
+  danhSachLoHangTonKho,
+  lichSuMuaBanSanPham
+}
